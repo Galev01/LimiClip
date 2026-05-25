@@ -21,4 +21,12 @@ final class DesignSystemTests: XCTestCase {
         XCTAssertEqual(nsColor.greenComponent, 82.0 / 255.0, accuracy: 0.05)
         XCTAssertEqual(nsColor.blueComponent, 222.0 / 255.0, accuracy: 0.05)
     }
+
+    func testTypographyExposesTitleAndBody() {
+        // These exist as SwiftUI Font values; we just verify the helpers are reachable.
+        _ = DesignTypography.cardBody
+        _ = DesignTypography.cardCode
+        _ = DesignTypography.drawerTitle
+        _ = DesignTypography.snippetKeyword
+    }
 }

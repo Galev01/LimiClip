@@ -2,15 +2,34 @@
 import Foundation
 import Combine
 
+enum DrawerTab: String, CaseIterable, Identifiable, Sendable {
+    case all, text, images, files, pinned
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .all: return "All"
+        case .text: return "Text"
+        case .images: return "Images"
+        case .files: return "Files"
+        case .pinned: return "Pinned"
+        }
+    }
+}
+
 @MainActor
 final class ClipboardViewModel: ObservableObject {
 
     @Published private(set) var items: [Item] = []
+    @Published var selectedTab: DrawerTab = .all {
+        didSet { focusedIndex = 0 }
+    }
+    @Published var searchQuery: String = "" {
+        didSet { focusedIndex = 0 }
+    }
+    @Published private(set) var focusedIndex: Int = 0
 
     private let store: ClipboardStore
     private let visibleLimit: Int
-    // nonisolated(unsafe) so deinit (which is nonisolated) can access the token
-    // for synchronous, thread-safe removeObserver cleanup.
     nonisolated(unsafe) private var observer: NSObjectProtocol?
 
     init(store: ClipboardStore, visibleLimit: Int = 200) {
@@ -27,9 +46,7 @@ final class ClipboardViewModel: ObservableObject {
     }
 
     deinit {
-        if let observer = observer {
-            NotificationCenter.default.removeObserver(observer)
-        }
+        if let observer { NotificationCenter.default.removeObserver(observer) }
     }
 
     func reload() {
@@ -39,5 +56,43 @@ final class ClipboardViewModel: ObservableObject {
             Log.app.error("view model reload failed: \(error.localizedDescription, privacy: .public)")
             items = []
         }
+        focusedIndex = min(focusedIndex, max(0, filteredItems.count - 1))
+    }
+
+    var filteredItems: [Item] {
+        var list = items
+        switch selectedTab {
+        case .all:    break
+        case .text:   list = list.filter { $0.kind == "text" }
+        case .images: list = list.filter { $0.kind == "image" }
+        case .files:  list = list.filter { $0.kind == "file" }
+        case .pinned: list = list.filter { $0.pinned }
+        }
+        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !q.isEmpty {
+            list = list.filter { item in
+                let bag = [item.body, item.sourceApp ?? ""].joined(separator: " ").lowercased()
+                return bag.contains(q)
+            }
+        }
+        return list
+    }
+
+    var currentItem: Item? {
+        let list = filteredItems
+        guard !list.isEmpty, focusedIndex < list.count, focusedIndex >= 0 else { return nil }
+        return list[focusedIndex]
+    }
+
+    func moveFocus(by delta: Int) {
+        let count = filteredItems.count
+        guard count > 0 else { focusedIndex = 0; return }
+        focusedIndex = max(0, min(count - 1, focusedIndex + delta))
+    }
+
+    func jumpTo(index: Int) {
+        let count = filteredItems.count
+        guard count > 0 else { focusedIndex = 0; return }
+        focusedIndex = max(0, min(count - 1, index))
     }
 }

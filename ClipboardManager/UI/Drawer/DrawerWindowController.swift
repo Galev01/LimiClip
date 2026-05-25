@@ -7,8 +7,8 @@ final class DrawerWindowController {
     private(set) var isVisible: Bool = false
     private var clickOutsideMonitor: Any?
 
-    init(viewModel: ClipboardViewModel) {
-        self.window = DrawerWindow(viewModel: viewModel)
+    init(viewModel: ClipboardViewModel, blobStore: BlobStore?) {
+        self.window = DrawerWindow(viewModel: viewModel, blobStore: blobStore)
         NotificationCenter.default.addObserver(
             self, selector: #selector(handleDismissRequest),
             name: .drawerDismissRequested, object: nil

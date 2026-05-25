@@ -3,6 +3,7 @@ import SwiftUI
 
 struct DrawerView: View {
     @ObservedObject var viewModel: ClipboardViewModel
+    let blobStore: BlobStore?
 
     @Environment(\.colorScheme) private var scheme
     private var dark: Bool { scheme == .dark }
@@ -32,6 +33,7 @@ struct DrawerView: View {
             UnevenRoundedRectangle(topLeadingRadius: 16, topTrailingRadius: 16)
                 .stroke(DesignColors.hairline(dark: dark), lineWidth: 0.5)
         )
+        .environment(\.blobStore, blobStore)
         .ignoresSafeArea()
     }
 
@@ -51,7 +53,7 @@ struct DrawerView: View {
 #Preview {
     let store = try! ClipboardStore(configuration: ClipboardStore.testingConfiguration())
     let vm = ClipboardViewModel(store: store)
-    return DrawerView(viewModel: vm)
+    return DrawerView(viewModel: vm, blobStore: nil)
         .frame(width: 1440, height: 300)
         .preferredColorScheme(.dark)
 }

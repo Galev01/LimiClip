@@ -62,3 +62,18 @@ final class BlobStore: @unchecked Sendable {
         root.appendingPathComponent(relativePath, isDirectory: false)
     }
 }
+
+// MARK: - SwiftUI environment
+
+import SwiftUI
+
+private struct BlobStoreKey: EnvironmentKey {
+    static let defaultValue: BlobStore? = nil
+}
+
+extension EnvironmentValues {
+    var blobStore: BlobStore? {
+        get { self[BlobStoreKey.self] }
+        set { self[BlobStoreKey.self] = newValue }
+    }
+}

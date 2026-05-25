@@ -27,6 +27,9 @@ packages:
   KeyboardShortcuts:
     url: https://github.com/sindresorhus/KeyboardShortcuts
     from: "2.0.0"
+  GRDB:
+    url: https://github.com/groue/GRDB.swift
+    from: "7.0.0"
 
 targets:
   ClipboardManager:
@@ -57,6 +60,8 @@ targets:
         com.apple.security.app-sandbox: false
     dependencies:
       - package: KeyboardShortcuts
+      - package: GRDB
+        product: GRDB
     scheme:
       testTargets:
         - ClipboardManagerTests

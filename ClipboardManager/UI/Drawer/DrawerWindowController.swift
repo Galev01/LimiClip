@@ -25,7 +25,8 @@ final class DrawerWindowController {
             onCopy: { item in copyHandler(item) },
             onDelete: { item in deleteHandler(item) },
             onOpenURL: { item in openURLHandler(item) },
-            onRevealInFinder: { item in revealHandler(item) }
+            onRevealInFinder: { item in revealHandler(item) },
+            accessibilityCheck: { [injector] in injector.hasAccessibilityPermission }
         )
 
         NotificationCenter.default.addObserver(
@@ -113,8 +114,15 @@ final class DrawerWindowController {
             return
         }
         hide()
-        // Give the dismissal animation time to start so the previously-active
-        // app receives the keystroke.
+        // Trigger the macOS Accessibility prompt the first time the user
+        // tries to paste. If they grant it, the keystroke synthesis 80ms
+        // later will land in the target app. If they decline, the item is
+        // still on the clipboard for manual ⌘V.
+        let trusted = injector.promptForAccessibilityIfNeeded()
+        if !trusted {
+            Log.drawer.info("paste injection skipped — Accessibility permission missing or pending")
+            return
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
             self?.injector.synthesizePasteKeystroke()
         }

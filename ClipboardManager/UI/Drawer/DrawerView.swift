@@ -1,4 +1,5 @@
 // ClipboardManager/UI/Drawer/DrawerView.swift
+import AppKit
 import SwiftUI
 
 struct DrawerView: View {
@@ -11,6 +12,9 @@ struct DrawerView: View {
     var onOpenURL: ((Item) -> Void)? = nil
     var onRevealInFinder: ((Item) -> Void)? = nil
 
+    var accessibilityCheck: () -> Bool = { true }
+
+    @State private var accessibilityGranted: Bool = true
     @State private var searchExpanded: Bool = false
     @State private var hoveredID: Int64? = nil
     @State private var hoverTimer: DispatchWorkItem? = nil
@@ -34,6 +38,9 @@ struct DrawerView: View {
 
             VStack(spacing: 0) {
                 topBar
+                if !accessibilityGranted {
+                    accessibilityBanner
+                }
                 Spacer(minLength: 0)
                 if viewModel.filteredItems.isEmpty {
                     if viewModel.items.isEmpty && viewModel.searchQuery.isEmpty && viewModel.selectedTab == .all {
@@ -60,6 +67,7 @@ struct DrawerView: View {
         )
         .environment(\.blobStore, blobStore)
         .ignoresSafeArea()
+        .onAppear { accessibilityGranted = accessibilityCheck() }
         .overlay(alignment: .top) {
             if let hovered = debouncedHoveredItem {
                 HoverPreviewContent(item: hovered)
@@ -145,6 +153,34 @@ struct DrawerView: View {
                 }
             }
         }
+    }
+
+    private var accessibilityBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Auto-paste needs Accessibility permission")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("Without it, Enter only copies to the clipboard. Grant access in System Settings → Privacy & Security → Accessibility.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Open Settings") {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.orange.opacity(dark ? 0.12 : 0.1))
+        )
+        .padding(.horizontal, 20)
     }
 
     private var bottomBar: some View {

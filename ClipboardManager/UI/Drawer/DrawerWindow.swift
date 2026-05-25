@@ -15,7 +15,8 @@ final class DrawerWindow: NSPanel {
         onCopy: @escaping (Item) -> Void,
         onDelete: @escaping (Item) -> Void,
         onOpenURL: @escaping (Item) -> Void,
-        onRevealInFinder: @escaping (Item) -> Void
+        onRevealInFinder: @escaping (Item) -> Void,
+        accessibilityCheck: @escaping () -> Bool = { true }
     ) {
         self.viewModel = viewModel
         self.store = store
@@ -42,7 +43,8 @@ final class DrawerWindow: NSPanel {
         let host = NSHostingView(rootView: DrawerView(
             viewModel: viewModel, blobStore: blobStore,
             onPaste: onPaste, onCopy: onCopy, onDelete: onDelete,
-            onOpenURL: onOpenURL, onRevealInFinder: onRevealInFinder
+            onOpenURL: onOpenURL, onRevealInFinder: onRevealInFinder,
+            accessibilityCheck: accessibilityCheck
         ))
         host.translatesAutoresizingMaskIntoConstraints = false
         let container = NSView()

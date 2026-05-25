@@ -63,4 +63,15 @@ final class PasteInjector {
     var hasAccessibilityPermission: Bool {
         return AXIsProcessTrusted()
     }
+
+    /// Triggers the macOS system prompt asking the user to grant Accessibility
+    /// permission, if not already granted. Returns the current trusted state.
+    /// Use this lazily — only when the user actually tries to do something
+    /// that requires the permission.
+    @discardableResult
+    func promptForAccessibilityIfNeeded() -> Bool {
+        let key = "AXTrustedCheckOptionPrompt" as CFString
+        let options: NSDictionary = [key: true]
+        return AXIsProcessTrustedWithOptions(options)
+    }
 }

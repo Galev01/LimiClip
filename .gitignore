@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+
+# Superpowers brainstorming session files
+.superpowers/
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscheme
+
+# SPM
+.swiftpm/
+Package.resolved
+
+# Logs
+*.log

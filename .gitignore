@@ -17,3 +17,6 @@ Package.resolved
 
 # Logs
 *.log
+
+# Generated Xcode project (regenerable from project.yml)
+ClipboardManager.xcodeproj/

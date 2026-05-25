@@ -23,7 +23,7 @@ final class AppCoordinator {
         let viewModel = ClipboardViewModel(store: store)
         self.viewModel = viewModel
 
-        let drawer = DrawerWindowController(viewModel: viewModel, blobStore: blobStore)
+        let drawer = DrawerWindowController(viewModel: viewModel, blobStore: blobStore, store: store)
         self.drawer = drawer
 
         self.menuBar = MenuBarController { drawer.toggle() }

@@ -12,6 +12,9 @@ struct DrawerView: View {
     var onRevealInFinder: ((Item) -> Void)? = nil
 
     @State private var searchExpanded: Bool = false
+    @State private var hoveredID: Int64? = nil
+    @State private var hoverTimer: DispatchWorkItem? = nil
+    @State private var debouncedHoveredItem: Item? = nil
 
     @Environment(\.colorScheme) private var scheme
     private var dark: Bool { scheme == .dark }
@@ -57,6 +60,15 @@ struct DrawerView: View {
         )
         .environment(\.blobStore, blobStore)
         .ignoresSafeArea()
+        .overlay(alignment: .top) {
+            if let hovered = debouncedHoveredItem {
+                HoverPreviewContent(item: hovered)
+                    .padding(.top, 56)
+                    .allowsHitTesting(false)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    .animation(.easeOut(duration: 0.18), value: debouncedHoveredItem?.id)
+            }
+        }
     }
 
     private var topBar: some View {
@@ -104,6 +116,21 @@ struct DrawerView: View {
                             .id(item.id ?? -1)
                             .onTapGesture {
                                 viewModel.jumpTo(index: idx)
+                            }
+                            .onHover { hovering in
+                                hoverTimer?.cancel()
+                                if hovering {
+                                    let snapshot = item
+                                    let work = DispatchWorkItem {
+                                        debouncedHoveredItem = snapshot
+                                        hoveredID = snapshot.id
+                                    }
+                                    hoverTimer = work
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+                                } else if hoveredID == item.id {
+                                    debouncedHoveredItem = nil
+                                    hoveredID = nil
+                                }
                             }
                     }
                 }

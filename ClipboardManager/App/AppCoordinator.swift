@@ -27,7 +27,10 @@ final class AppCoordinator {
         self.drawer = drawer
 
         self.menuBar = MenuBarController { drawer.toggle() }
-        self.hotkey = HotkeyService { drawer.toggle() }
+        self.hotkey = HotkeyService(
+            onToggle: { drawer.toggle() },
+            onScreenshot: { AppCoordinator.captureScreenshotToClipboard() }
+        )
         self.monitor = PasteboardMonitor(store: store, blobStore: blobStore)
         self.retention = RetentionJob(store: store)
     }
@@ -37,5 +40,19 @@ final class AppCoordinator {
         hotkey.start()
         monitor.start()
         retention.start()
+    }
+
+    /// Spawns `screencapture -i -c` so the user can drag-select a region;
+    /// the resulting image lands on NSPasteboard and the monitor picks it up.
+    static func captureScreenshotToClipboard() {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        task.arguments = ["-i", "-c"]
+        do {
+            try task.run()
+            Log.coordinator.info("screencapture -i -c launched")
+        } catch {
+            Log.coordinator.error("screencapture launch failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 }

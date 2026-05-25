@@ -20,4 +20,19 @@ final class HotkeyServiceTests: XCTestCase {
         XCTAssertTrue(shortcut.modifiers.contains(.shift))
         XCTAssertEqual(shortcut.key, .v)
     }
+
+    func testScreenshotShortcutHasDefault() {
+        let name = KeyboardShortcuts.Name.screenshotToClipboard
+        XCTAssertNotNil(KeyboardShortcuts.getShortcut(for: name))
+    }
+
+    func testScreenshotDefaultIsCommandShiftA() {
+        guard let shortcut = KeyboardShortcuts.getShortcut(for: .screenshotToClipboard) else {
+            XCTFail("missing shortcut")
+            return
+        }
+        XCTAssertTrue(shortcut.modifiers.contains(.command))
+        XCTAssertTrue(shortcut.modifiers.contains(.shift))
+        XCTAssertEqual(shortcut.key, .a)
+    }
 }

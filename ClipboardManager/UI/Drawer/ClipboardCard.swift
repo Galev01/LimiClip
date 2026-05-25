@@ -4,6 +4,7 @@ import AppKit
 
 struct ClipboardCard: View {
     let item: Item
+    var isFocused: Bool = false
     @Environment(\.colorScheme) private var scheme
     @Environment(\.blobStore) private var blobStore
 
@@ -31,8 +32,17 @@ struct ClipboardCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(DesignColors.hairline(dark: dark), lineWidth: 0.5)
+                .stroke(
+                    isFocused
+                        ? DesignColors.accent
+                        : DesignColors.hairline(dark: dark),
+                    lineWidth: isFocused ? 2 : 0.5
+                )
         )
+        .shadow(color: isFocused
+                    ? DesignColors.accent.opacity(0.25)
+                    : Color.clear,
+                radius: 12, y: 4)
     }
 
     @ViewBuilder

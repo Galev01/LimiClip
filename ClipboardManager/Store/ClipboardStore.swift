@@ -2,6 +2,7 @@
 import Foundation
 import GRDB
 import CryptoKit
+import CoreGraphics
 
 /// Thread-safe SQLite-backed store for clipboard history.
 ///
@@ -121,6 +122,107 @@ final class ClipboardStore: @unchecked Sendable {
                 blobPath: nil,
                 dimensions: nil,
                 byteSize: raw.utf8.count,
+                sourceApp: sourceApp,
+                sourceBundleId: sourceBundleId,
+                createdAt: now,
+                pinned: false,
+                snippetId: nil,
+                deletedAt: nil
+            )
+            try item.insert(db)
+            return item
+        }
+        postChange()
+        return result
+    }
+
+    /// Records an image clipboard item. `contentHash` is the SHA256 of the
+    /// ORIGINAL image bytes (computed by the caller — the monitor — so we
+    /// don't double-hash). On dedupe hit, the existing row's createdAt is
+    /// bumped and the new blob path is NOT replaced (caller should delete
+    /// the unused new blob).
+    @discardableResult
+    func recordImage(
+        contentHash: String,
+        blobPath: String,
+        dimensions: CGSize,
+        byteSize: Int,
+        sourceApp: String?,
+        sourceBundleId: String?
+    ) throws -> Item? {
+        if let bundleId = sourceBundleId, try isExcluded(bundleId: bundleId) {
+            Log.app.info("skipping image from excluded bundle: \(bundleId, privacy: .public)")
+            return nil
+        }
+        let now = Int64(Date().timeIntervalSince1970)
+        let dimsString = "\(Int(dimensions.width))x\(Int(dimensions.height))"
+
+        let result: Item = try queue.write { db in
+            if var existing = try Item
+                .filter(Item.Columns.contentHash == contentHash && Item.Columns.deletedAt == nil)
+                .fetchOne(db)
+            {
+                existing.createdAt = now
+                try existing.update(db)
+                return existing
+            }
+            var item = Item(
+                id: nil,
+                kind: "image",
+                subtype: nil,
+                contentHash: contentHash,
+                body: blobPath,
+                blobPath: blobPath,
+                dimensions: dimsString,
+                byteSize: byteSize,
+                sourceApp: sourceApp,
+                sourceBundleId: sourceBundleId,
+                createdAt: now,
+                pinned: false,
+                snippetId: nil,
+                deletedAt: nil
+            )
+            try item.insert(db)
+            return item
+        }
+        postChange()
+        return result
+    }
+
+    /// Records a file clipboard item from a `FileReference`. Dedupe is by
+    /// path (so re-copying the same file is a no-op).
+    @discardableResult
+    func recordFile(
+        reference: FileReference,
+        sourceApp: String?,
+        sourceBundleId: String?
+    ) throws -> Item? {
+        if let bundleId = sourceBundleId, try isExcluded(bundleId: bundleId) {
+            Log.app.info("skipping file from excluded bundle: \(bundleId, privacy: .public)")
+            return nil
+        }
+        let now = Int64(Date().timeIntervalSince1970)
+        let body = try reference.encodedJSON()
+        let hash = Self.hash(reference.path)
+
+        let result: Item = try queue.write { db in
+            if var existing = try Item
+                .filter(Item.Columns.contentHash == hash && Item.Columns.deletedAt == nil)
+                .fetchOne(db)
+            {
+                existing.createdAt = now
+                try existing.update(db)
+                return existing
+            }
+            var item = Item(
+                id: nil,
+                kind: "file",
+                subtype: nil,
+                contentHash: hash,
+                body: body,
+                blobPath: nil,
+                dimensions: nil,
+                byteSize: Int(reference.byteSize),
                 sourceApp: sourceApp,
                 sourceBundleId: sourceBundleId,
                 createdAt: now,

@@ -1,5 +1,6 @@
 import XCTest
 import GRDB
+import CoreGraphics
 @testable import ClipboardManager
 
 final class ClipboardStoreTests: XCTestCase {
@@ -98,5 +99,66 @@ final class ClipboardStoreTests: XCTestCase {
         let bodies = try store.recentItems(limit: 100).map(\.body)
         XCTAssertEqual(bodies.first, "item-19")
         XCTAssertEqual(bodies.last, "item-10")
+    }
+
+    // MARK: - Phase 3: image + file
+
+    func testRecordImageStoresWithBlobPathAndDimensions() throws {
+        let store = try makeStore()
+        // imageHash is independent of body; we pass the raw bytes' hash explicitly.
+        let imageBytes = Data([0xff, 0xee, 0xdd, 0xcc])
+        let inserted = try store.recordImage(
+            contentHash: "abc123",
+            blobPath: "ab/cd/uuid.png",
+            dimensions: CGSize(width: 4032, height: 3024),
+            byteSize: imageBytes.count,
+            sourceApp: "Screenshot",
+            sourceBundleId: nil
+        )
+        XCTAssertNotNil(inserted)
+        XCTAssertEqual(inserted?.kind, "image")
+        XCTAssertEqual(inserted?.blobPath, "ab/cd/uuid.png")
+        XCTAssertEqual(inserted?.dimensions, "4032x3024")
+        XCTAssertEqual(inserted?.body, "ab/cd/uuid.png")
+    }
+
+    func testRecordImageDedupesByContentHash() throws {
+        let store = try makeStore()
+        let a = try store.recordImage(
+            contentHash: "samehash",
+            blobPath: "aa/bb/first.png", dimensions: CGSize(width: 100, height: 100),
+            byteSize: 10, sourceApp: nil, sourceBundleId: nil
+        )
+        let b = try store.recordImage(
+            contentHash: "samehash",
+            blobPath: "cc/dd/second.png", dimensions: CGSize(width: 100, height: 100),
+            byteSize: 10, sourceApp: nil, sourceBundleId: nil
+        )
+        XCTAssertEqual(a?.id, b?.id)
+        XCTAssertEqual(try store.countItems(), 1)
+    }
+
+    func testRecordFileStoresJSONReference() throws {
+        let store = try makeStore()
+        let ref = FileReference(
+            path: "/Users/gal/Documents/spec.pdf",
+            name: "spec.pdf",
+            byteSize: 1024,
+            modifiedAt: 1_700_000_000
+        )
+        let inserted = try store.recordFile(reference: ref, sourceApp: "Finder", sourceBundleId: "com.apple.finder")
+        XCTAssertNotNil(inserted)
+        XCTAssertEqual(inserted?.kind, "file")
+        let decoded = try FileReference.decodingJSON(inserted!.body)
+        XCTAssertEqual(decoded, ref)
+    }
+
+    func testRecordFileDedupesByPath() throws {
+        let store = try makeStore()
+        let ref = FileReference(path: "/x/y/a.pdf", name: "a.pdf", byteSize: 1, modifiedAt: 1)
+        let first = try store.recordFile(reference: ref, sourceApp: nil, sourceBundleId: nil)
+        let second = try store.recordFile(reference: ref, sourceApp: nil, sourceBundleId: nil)
+        XCTAssertEqual(first?.id, second?.id)
+        XCTAssertEqual(try store.countItems(), 1)
     }
 }

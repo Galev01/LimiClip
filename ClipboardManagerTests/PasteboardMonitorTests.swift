@@ -84,21 +84,62 @@ final class PasteboardMonitorTests: XCTestCase {
         XCTAssertEqual(try store.recentItems(limit: 5).map(\.body), ["after pause"])
     }
 
-    func testIgnoresImagesInPhase2() async throws {
+    func testCapturesImage() async throws {
+        let blobs = try BlobStore(rootDirectory: URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("monitor-tests-\(UUID().uuidString)", isDirectory: true))
+        monitor = PasteboardMonitor(
+            pasteboard: pasteboard,
+            store: store,
+            blobStore: blobs,
+            frontmostApp: { (nil, nil) }
+        )
+        monitor.tickForTesting()
+
+        pasteboard.clearContents()
+        // Build a 20x10 PNG via NSBitmapImageRep (Retina-safe).
+        let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 20, pixelsHigh: 10,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+            isPlanar: false, colorSpaceName: .deviceRGB,
+            bytesPerRow: 0, bitsPerPixel: 0
+        )!
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSColor.red.setFill()
+        NSRect(x: 0, y: 0, width: 20, height: 10).fill()
+        NSGraphicsContext.restoreGraphicsState()
+        let pngData = rep.representation(using: .png, properties: [:])!
+        pasteboard.setData(pngData, forType: .png)
+
+        monitor.tickForTesting()
+
+        let items = try store.recentItems(limit: 5)
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items.first?.kind, "image")
+        XCTAssertEqual(items.first?.dimensions, "20x10")
+        XCTAssertNotNil(items.first?.blobPath)
+    }
+
+    func testCapturesFileURL() async throws {
+        // Create a real temporary file so the modification date + size are real.
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("clipboard-test-\(UUID().uuidString).txt")
+        try Data("hello".utf8).write(to: tmp)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
         monitor = PasteboardMonitor(pasteboard: pasteboard, store: store, frontmostApp: { (nil, nil) })
         monitor.tickForTesting()
 
         pasteboard.clearContents()
-        let tinyTIFF: Data = {
-            let image = NSImage(size: NSSize(width: 1, height: 1))
-            image.lockFocus()
-            NSColor.black.drawSwatch(in: NSRect(x: 0, y: 0, width: 1, height: 1))
-            image.unlockFocus()
-            return image.tiffRepresentation ?? Data()
-        }()
-        pasteboard.setData(tinyTIFF, forType: .tiff)
+        pasteboard.writeObjects([tmp as NSURL])
 
         monitor.tickForTesting()
-        XCTAssertEqual(try store.countItems(), 0)
+
+        let items = try store.recentItems(limit: 5)
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items.first?.kind, "file")
+        let ref = try FileReference.decodingJSON(items.first!.body)
+        XCTAssertEqual(ref.name, tmp.lastPathComponent)
+        XCTAssertEqual(ref.path, tmp.path)
     }
 }

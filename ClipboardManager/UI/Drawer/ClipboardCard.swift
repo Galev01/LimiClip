@@ -5,6 +5,11 @@ import AppKit
 struct ClipboardCard: View {
     let item: Item
     var isFocused: Bool = false
+    var onPaste: ((Item, Bool) -> Void)? = nil
+    var onCopy: ((Item) -> Void)? = nil
+    var onDelete: ((Item) -> Void)? = nil
+    var onOpenURL: ((Item) -> Void)? = nil
+    var onRevealInFinder: ((Item) -> Void)? = nil
     @Environment(\.colorScheme) private var scheme
     @Environment(\.blobStore) private var blobStore
 
@@ -43,6 +48,23 @@ struct ClipboardCard: View {
                     ? DesignColors.accent.opacity(0.25)
                     : Color.clear,
                 radius: 12, y: 4)
+        .contextMenu {
+            Button("Paste") { onPaste?(item, false) }
+                .keyboardShortcut(.return, modifiers: [])
+            Button("Paste as Plain Text") { onPaste?(item, true) }
+                .keyboardShortcut(.return, modifiers: .shift)
+            Button("Copy") { onCopy?(item) }
+                .keyboardShortcut("c", modifiers: .command)
+            Divider()
+            if item.subtype == TextSubtype.url.rawValue {
+                Button("Open URL") { onOpenURL?(item) }
+            }
+            if item.kind == "file" {
+                Button("Reveal in Finder") { onRevealInFinder?(item) }
+            }
+            Divider()
+            Button("Delete", role: .destructive) { onDelete?(item) }
+        }
     }
 
     @ViewBuilder

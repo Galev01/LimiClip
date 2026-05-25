@@ -7,12 +7,19 @@ final class DrawerWindow: NSPanel {
 
     private let viewModel: ClipboardViewModel
     private let store: ClipboardStore
+    private let onPasteCallback: (Item, Bool) -> Void
 
-    var onPasteRequested: ((Item, Bool) -> Void)?
-
-    init(viewModel: ClipboardViewModel, blobStore: BlobStore?, store: ClipboardStore) {
+    init(
+        viewModel: ClipboardViewModel, blobStore: BlobStore?, store: ClipboardStore,
+        onPaste: @escaping (Item, Bool) -> Void,
+        onCopy: @escaping (Item) -> Void,
+        onDelete: @escaping (Item) -> Void,
+        onOpenURL: @escaping (Item) -> Void,
+        onRevealInFinder: @escaping (Item) -> Void
+    ) {
         self.viewModel = viewModel
         self.store = store
+        self.onPasteCallback = onPaste
         super.init(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
@@ -32,7 +39,11 @@ final class DrawerWindow: NSPanel {
         titleVisibility = .hidden
         titlebarAppearsTransparent = true
 
-        let host = NSHostingView(rootView: DrawerView(viewModel: viewModel, blobStore: blobStore))
+        let host = NSHostingView(rootView: DrawerView(
+            viewModel: viewModel, blobStore: blobStore,
+            onPaste: onPaste, onCopy: onCopy, onDelete: onDelete,
+            onOpenURL: onOpenURL, onRevealInFinder: onRevealInFinder
+        ))
         host.translatesAutoresizingMaskIntoConstraints = false
         let container = NSView()
         container.addSubview(host)
@@ -73,7 +84,7 @@ final class DrawerWindow: NSPanel {
         case 36, 76:   // return (36), keypad enter (76)
             if let item = viewModel.currentItem {
                 let asPlain = event.modifierFlags.contains(.shift)
-                onPasteRequested?(item, asPlain)
+                onPasteCallback(item, asPlain)
             }
         default:
             super.keyDown(with: event)

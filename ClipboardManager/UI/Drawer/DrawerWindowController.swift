@@ -7,17 +7,37 @@ final class DrawerWindowController {
     private(set) var isVisible: Bool = false
     private var clickOutsideMonitor: Any?
     private let injector: PasteInjector
+    private let store: ClipboardStore
 
     init(viewModel: ClipboardViewModel, blobStore: BlobStore?, store: ClipboardStore, injector: PasteInjector) {
         self.injector = injector
-        self.window = DrawerWindow(viewModel: viewModel, blobStore: blobStore, store: store)
+        self.store = store
+
+        var pasteHandler: ((Item, Bool) -> Void)!
+        var copyHandler: ((Item) -> Void)!
+        var deleteHandler: ((Item) -> Void)!
+        var openURLHandler: ((Item) -> Void)!
+        var revealHandler: ((Item) -> Void)!
+
+        self.window = DrawerWindow(
+            viewModel: viewModel, blobStore: blobStore, store: store,
+            onPaste: { item, asPlain in pasteHandler(item, asPlain) },
+            onCopy: { item in copyHandler(item) },
+            onDelete: { item in deleteHandler(item) },
+            onOpenURL: { item in openURLHandler(item) },
+            onRevealInFinder: { item in revealHandler(item) }
+        )
+
         NotificationCenter.default.addObserver(
             self, selector: #selector(handleDismissRequest),
             name: .drawerDismissRequested, object: nil
         )
-        self.window.onPasteRequested = { [weak self] item, asPlain in
-            self?.handlePaste(item: item, asPlain: asPlain)
-        }
+
+        pasteHandler = { [weak self] item, asPlain in self?.handlePaste(item: item, asPlain: asPlain) }
+        copyHandler = { [weak self] item in self?.handleCopy(item: item) }
+        deleteHandler = { [weak self] item in self?.handleDelete(item: item) }
+        openURLHandler = { [weak self] item in self?.handleOpenURL(item: item) }
+        revealHandler = { [weak self] item in self?.handleReveal(item: item) }
     }
 
     @objc private func handleDismissRequest() { hide() }
@@ -98,5 +118,31 @@ final class DrawerWindowController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
             self?.injector.synthesizePasteKeystroke()
         }
+    }
+
+    private func handleCopy(item: Item) {
+        do { try injector.writeToPasteboard(item: item) }
+        catch { Log.drawer.error("copy write failed: \(error.localizedDescription, privacy: .public)") }
+    }
+
+    private func handleDelete(item: Item) {
+        guard let id = item.id else { return }
+        do { try store.softDelete(itemId: id) }
+        catch { Log.drawer.error("delete failed: \(error.localizedDescription, privacy: .public)") }
+    }
+
+    private func handleOpenURL(item: Item) {
+        guard item.subtype == TextSubtype.url.rawValue,
+              let url = URL(string: item.body) else { return }
+        NSWorkspace.shared.open(url)
+        hide()
+    }
+
+    private func handleReveal(item: Item) {
+        guard item.kind == "file",
+              let ref = try? FileReference.decodingJSON(item.body) else { return }
+        let url = URL(fileURLWithPath: ref.path)
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+        hide()
     }
 }

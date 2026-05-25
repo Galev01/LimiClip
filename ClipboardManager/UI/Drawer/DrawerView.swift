@@ -5,6 +5,12 @@ struct DrawerView: View {
     @ObservedObject var viewModel: ClipboardViewModel
     let blobStore: BlobStore?
 
+    var onPaste: ((Item, Bool) -> Void)? = nil
+    var onCopy: ((Item) -> Void)? = nil
+    var onDelete: ((Item) -> Void)? = nil
+    var onOpenURL: ((Item) -> Void)? = nil
+    var onRevealInFinder: ((Item) -> Void)? = nil
+
     @State private var searchExpanded: Bool = false
 
     @Environment(\.colorScheme) private var scheme
@@ -86,7 +92,15 @@ struct DrawerView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     ForEach(Array(viewModel.filteredItems.enumerated()), id: \.element.id) { idx, item in
-                        ClipboardCard(item: item, isFocused: idx == viewModel.focusedIndex)
+                        ClipboardCard(
+                            item: item,
+                            isFocused: idx == viewModel.focusedIndex,
+                            onPaste: { onPaste?($0, $1) },
+                            onCopy: { onCopy?($0) },
+                            onDelete: { onDelete?($0) },
+                            onOpenURL: { onOpenURL?($0) },
+                            onRevealInFinder: { onRevealInFinder?($0) }
+                        )
                             .id(item.id ?? -1)
                             .onTapGesture {
                                 viewModel.jumpTo(index: idx)

@@ -4,6 +4,7 @@ import AppKit
 @MainActor
 final class AppCoordinator {
     private let store: ClipboardStore
+    private let blobStore: BlobStore
     private let viewModel: ClipboardViewModel
     private let menuBar: MenuBarController
     private let drawer: DrawerWindowController
@@ -16,6 +17,9 @@ final class AppCoordinator {
         try store.seedDefaultExclusionsIfNeeded()
         self.store = store
 
+        let blobStore = try BlobStore()
+        self.blobStore = blobStore
+
         let viewModel = ClipboardViewModel(store: store)
         self.viewModel = viewModel
 
@@ -24,7 +28,7 @@ final class AppCoordinator {
 
         self.menuBar = MenuBarController { drawer.toggle() }
         self.hotkey = HotkeyService { drawer.toggle() }
-        self.monitor = PasteboardMonitor(store: store)
+        self.monitor = PasteboardMonitor(store: store, blobStore: blobStore)
         self.retention = RetentionJob(store: store)
     }
 

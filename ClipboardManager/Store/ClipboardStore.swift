@@ -102,7 +102,7 @@ final class ClipboardStore: @unchecked Sendable {
         let hash = Self.hash(raw)
         let now = Int64(Date().timeIntervalSince1970)
 
-        return try queue.write { db in
+        let result: Item = try queue.write { db in
             // Dedupe by hash among non-deleted rows.
             if var existing = try Item
                 .filter(Item.Columns.contentHash == hash && Item.Columns.deletedAt == nil)
@@ -131,6 +131,8 @@ final class ClipboardStore: @unchecked Sendable {
             try item.insert(db)
             return item
         }
+        postChange()
+        return result
     }
 
     // MARK: - Queries
@@ -162,6 +164,7 @@ final class ClipboardStore: @unchecked Sendable {
             try Item.filter(Item.Columns.id == itemId)
                 .updateAll(db, [Item.Columns.deletedAt.set(to: now)])
         }
+        postChange()
     }
 
     // MARK: - Retention
@@ -179,6 +182,7 @@ final class ClipboardStore: @unchecked Sendable {
             try Item.filter(Item.Columns.deletedAt < undeleteCutoff)
                 .deleteAll(db)
         }
+        postChange()
     }
 
     /// Keep at most `max` non-pinned items, ordered by createdAt desc. Older
@@ -198,6 +202,7 @@ final class ClipboardStore: @unchecked Sendable {
                     .deleteAll(db)
             }
         }
+        postChange()
     }
 
     // MARK: - Exclusions
@@ -217,12 +222,14 @@ final class ClipboardStore: @unchecked Sendable {
             var e = Exclusion(bundleId: bundleId, name: name)
             try e.save(db)
         }
+        postChange()
     }
 
     func removeExclusion(bundleId: String) throws {
         _ = try queue.write { db in
             try Exclusion.deleteOne(db, key: bundleId)
         }
+        postChange()
     }
 
     func allExclusions() throws -> [Exclusion] {
@@ -243,4 +250,16 @@ final class ClipboardStore: @unchecked Sendable {
         let digest = SHA256.hash(data: Data(s.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
     }
+
+    // MARK: - Change notifications
+
+    private func postChange() {
+        NotificationCenter.default.post(name: .clipboardStoreDidChange, object: nil)
+    }
+}
+
+extension Notification.Name {
+    /// Posted after any successful insert / delete / purge in ClipboardStore.
+    /// Subscribers should re-query whatever slice they care about.
+    static let clipboardStoreDidChange = Notification.Name("ClipboardStoreDidChange")
 }

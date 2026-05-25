@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+import AppKit
 @testable import ClipboardManager
 
 final class DesignSystemTests: XCTestCase {
@@ -28,5 +29,15 @@ final class DesignSystemTests: XCTestCase {
         _ = DesignTypography.cardCode
         _ = DesignTypography.drawerTitle
         _ = DesignTypography.snippetKeyword
+    }
+
+    func testDrawerMaterialMaps() {
+        XCTAssertEqual(DesignMaterials.drawer(dark: true), .hudWindow)
+        XCTAssertEqual(DesignMaterials.drawer(dark: false), .popover)
+    }
+
+    func testPopoverMaterialIsAlwaysPopover() {
+        XCTAssertEqual(DesignMaterials.popover(dark: true), .popover)
+        XCTAssertEqual(DesignMaterials.popover(dark: false), .popover)
     }
 }

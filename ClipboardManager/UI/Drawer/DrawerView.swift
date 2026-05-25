@@ -1,15 +1,16 @@
+// ClipboardManager/UI/Drawer/DrawerView.swift
 import SwiftUI
 
 struct DrawerView: View {
+    @ObservedObject var viewModel: ClipboardViewModel
+
     @Environment(\.colorScheme) private var scheme
     private var dark: Bool { scheme == .dark }
 
     var body: some View {
         ZStack {
-            // Vibrancy material under everything.
             VisualEffectBackground(material: DesignMaterials.drawer(dark: dark))
 
-            // Gradient overlay matches the prototype's drawer body.
             LinearGradient(
                 colors: dark
                     ? [Color(red: 52/255, green: 52/255, blue: 56/255).opacity(0.97),
@@ -20,9 +21,11 @@ struct DrawerView: View {
                 endPoint: .bottom
             )
 
-            // Phase 1: empty state placeholder. Phase 4 will replace this with
-            // the top bar + card strip + bottom count bar.
-            EmptyStateView()
+            if viewModel.items.isEmpty {
+                EmptyStateView()
+            } else {
+                cardStrip
+            }
         }
         .clipShape(.rect(topLeadingRadius: 16, topTrailingRadius: 16))
         .overlay(
@@ -31,10 +34,24 @@ struct DrawerView: View {
         )
         .ignoresSafeArea()
     }
+
+    private var cardStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(viewModel.items, id: \.id) { item in
+                    ClipboardCard(item: item)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 20)
+        }
+    }
 }
 
 #Preview {
-    DrawerView()
+    let store = try! ClipboardStore(configuration: ClipboardStore.testingConfiguration())
+    let vm = ClipboardViewModel(store: store)
+    return DrawerView(viewModel: vm)
         .frame(width: 1440, height: 300)
         .preferredColorScheme(.dark)
 }

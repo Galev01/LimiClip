@@ -3,11 +3,12 @@ import AppKit
 
 @MainActor
 final class DrawerWindowController {
-    private let window = DrawerWindow()
+    private let window: DrawerWindow
     private(set) var isVisible: Bool = false
     private var clickOutsideMonitor: Any?
 
-    init() {
+    init(viewModel: ClipboardViewModel) {
+        self.window = DrawerWindow(viewModel: viewModel)
         NotificationCenter.default.addObserver(
             self, selector: #selector(handleDismissRequest),
             name: .drawerDismissRequested, object: nil

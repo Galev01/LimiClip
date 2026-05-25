@@ -5,7 +5,7 @@ import SwiftUI
 final class DrawerWindow: NSPanel {
     static let drawerHeight: CGFloat = 300
 
-    init() {
+    init(viewModel: ClipboardViewModel) {
         super.init(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
@@ -25,7 +25,7 @@ final class DrawerWindow: NSPanel {
         titleVisibility = .hidden
         titlebarAppearsTransparent = true
 
-        let host = NSHostingView(rootView: DrawerView())
+        let host = NSHostingView(rootView: DrawerView(viewModel: viewModel))
         host.translatesAutoresizingMaskIntoConstraints = false
         let container = NSView()
         container.addSubview(host)

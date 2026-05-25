@@ -114,13 +114,12 @@ final class DrawerWindowController {
             return
         }
         hide()
-        // Trigger the macOS Accessibility prompt the first time the user
-        // tries to paste. If they grant it, the keystroke synthesis 80ms
-        // later will land in the target app. If they decline, the item is
-        // still on the clipboard for manual ⌘V.
-        let trusted = injector.promptForAccessibilityIfNeeded()
-        if !trusted {
-            Log.drawer.info("paste injection skipped — Accessibility permission missing or pending")
+        // Silent check only — the drawer's banner is the single source of
+        // permission guidance, so we don't spam the system dialog on every
+        // paste. The item is on the clipboard either way; the user can
+        // paste manually until they grant Accessibility via the banner.
+        guard injector.hasAccessibilityPermission else {
+            Log.drawer.info("paste injection skipped — Accessibility permission missing")
             return
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in

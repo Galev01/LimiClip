@@ -8,6 +8,8 @@ final class DrawerWindow: NSPanel {
     private let viewModel: ClipboardViewModel
     private let store: ClipboardStore
 
+    var onPasteRequested: ((Item, Bool) -> Void)?
+
     init(viewModel: ClipboardViewModel, blobStore: BlobStore?, store: ClipboardStore) {
         self.viewModel = viewModel
         self.store = store
@@ -68,6 +70,11 @@ final class DrawerWindow: NSPanel {
             // ⌘1 = keyCode 18, ⌘2 = 19, ... ⌘9 = 25.
             let n = Int(event.keyCode) - 18
             Task { @MainActor in viewModel.jumpTo(index: n) }
+        case 36, 76:   // return (36), keypad enter (76)
+            if let item = viewModel.currentItem {
+                let asPlain = event.modifierFlags.contains(.shift)
+                onPasteRequested?(item, asPlain)
+            }
         default:
             super.keyDown(with: event)
         }

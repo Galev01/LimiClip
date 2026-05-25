@@ -6,13 +6,18 @@ final class DrawerWindowController {
     private let window: DrawerWindow
     private(set) var isVisible: Bool = false
     private var clickOutsideMonitor: Any?
+    private let injector: PasteInjector
 
-    init(viewModel: ClipboardViewModel, blobStore: BlobStore?, store: ClipboardStore) {
+    init(viewModel: ClipboardViewModel, blobStore: BlobStore?, store: ClipboardStore, injector: PasteInjector) {
+        self.injector = injector
         self.window = DrawerWindow(viewModel: viewModel, blobStore: blobStore, store: store)
         NotificationCenter.default.addObserver(
             self, selector: #selector(handleDismissRequest),
             name: .drawerDismissRequested, object: nil
         )
+        self.window.onPasteRequested = { [weak self] item, asPlain in
+            self?.handlePaste(item: item, asPlain: asPlain)
+        }
     }
 
     @objc private func handleDismissRequest() { hide() }
@@ -78,5 +83,20 @@ final class DrawerWindowController {
                 self?.isVisible = false
             }
         })
+    }
+
+    private func handlePaste(item: Item, asPlain: Bool) {
+        do {
+            try injector.writeToPasteboard(item: item, asPlainText: asPlain)
+        } catch {
+            Log.drawer.error("paste write failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        hide()
+        // Give the dismissal animation time to start so the previously-active
+        // app receives the keystroke.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            self?.injector.synthesizePasteKeystroke()
+        }
     }
 }

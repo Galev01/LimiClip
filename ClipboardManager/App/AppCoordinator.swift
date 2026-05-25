@@ -11,6 +11,7 @@ final class AppCoordinator {
     private let hotkey: HotkeyService
     private let monitor: PasteboardMonitor
     private let retention: RetentionJob
+    private let pasteInjector: PasteInjector
 
     init() throws {
         let store = try ClipboardStore()
@@ -20,10 +21,13 @@ final class AppCoordinator {
         let blobStore = try BlobStore()
         self.blobStore = blobStore
 
+        let injector = PasteInjector(blobStore: blobStore)
+        self.pasteInjector = injector
+
         let viewModel = ClipboardViewModel(store: store)
         self.viewModel = viewModel
 
-        let drawer = DrawerWindowController(viewModel: viewModel, blobStore: blobStore, store: store)
+        let drawer = DrawerWindowController(viewModel: viewModel, blobStore: blobStore, store: store, injector: injector)
         self.drawer = drawer
 
         self.menuBar = MenuBarController { drawer.toggle() }

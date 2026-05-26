@@ -4,6 +4,12 @@ import KeyboardShortcuts
 
 final class HotkeyServiceTests: XCTestCase {
 
+    override func setUp() {
+        super.setUp()
+        // Reset any user-stored value so the default (or nil) is what we read.
+        KeyboardShortcuts.reset(.toggleCompactPopup)
+    }
+
     func testToggleDrawerShortcutHasDefault() {
         let name = KeyboardShortcuts.Name.toggleDrawer
         let shortcut = KeyboardShortcuts.getShortcut(for: name)

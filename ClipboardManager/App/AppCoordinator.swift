@@ -12,6 +12,7 @@ final class AppCoordinator {
     private let monitor: PasteboardMonitor
     private let retention: RetentionJob
     private let pasteInjector: PasteInjector
+    private let preferencesWindow = PreferencesWindowController()
 
     init() throws {
         let store = try ClipboardStore()
@@ -30,9 +31,10 @@ final class AppCoordinator {
         let drawer = DrawerWindowController(viewModel: viewModel, blobStore: blobStore, store: store, injector: injector)
         self.drawer = drawer
 
+        let prefs = self.preferencesWindow
         self.menuBar = MenuBarController(
             onOpenClipboard: { drawer.toggle() },
-            onOpenPreferences: { /* wired in Task S-4 */ }
+            onOpenPreferences: { prefs.show() }
         )
         self.hotkey = HotkeyService(
             onToggle: { drawer.toggle() },
@@ -43,10 +45,22 @@ final class AppCoordinator {
     }
 
     func start() {
+        applyAppearance()
         Log.coordinator.info("coordinator starting")
         hotkey.start()
         monitor.start()
         retention.start()
+
+        // Re-apply appearance if the user changes it in Preferences.
+        NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
+                                               object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.applyAppearance() }
+        }
+    }
+
+    private func applyAppearance() {
+        let appearance = Settings().appearance
+        NSApp.appearance = appearance.nsAppearance
     }
 
     /// Spawns `screencapture -i -c` so the user can drag-select a region;

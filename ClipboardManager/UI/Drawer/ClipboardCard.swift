@@ -25,6 +25,11 @@ struct ClipboardCard: View {
     private var isImage: Bool { item.kind == "image" }
     private var isFile: Bool { item.kind == "file" }
 
+    private var quickActions: [QuickAction] {
+        guard item.kind == "text", item.subtype != TextSubtype.url.rawValue else { return [] }
+        return QuickActionDetector.detect(in: item.body)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             content
@@ -56,6 +61,12 @@ struct ClipboardCard: View {
                 .keyboardShortcut(.return, modifiers: .shift)
             Button("Copy") { onCopy?(item) }
                 .keyboardShortcut("c", modifiers: .command)
+            if !quickActions.isEmpty {
+                Divider()
+                ForEach(Array(quickActions.enumerated()), id: \.offset) { _, action in
+                    quickActionMenuItem(for: action)
+                }
+            }
             Divider()
             if item.subtype == TextSubtype.url.rawValue {
                 Button("Open URL") { onOpenURL?(item) }
@@ -71,6 +82,31 @@ struct ClipboardCard: View {
             }
             Divider()
             Button("Delete", role: .destructive) { onDelete?(item) }
+        }
+    }
+
+    // MARK: - Quick actions
+
+    @ViewBuilder
+    private func quickActionMenuItem(for action: QuickAction) -> some View {
+        switch action {
+        case .call(let number):
+            Button("Call \(number)") {
+                if let url = URL(string: "tel:\(number.filter { $0.isNumber || $0 == "+" })") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+        case .composeEmail(let address):
+            Button("Compose Email") {
+                if let url = URL(string: "mailto:\(address)") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+        case .copyHexColor(let hex):
+            Button("Copy \(hex)") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(hex, forType: .string)
+            }
         }
     }
 

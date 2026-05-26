@@ -41,6 +41,7 @@ struct Settings: @unchecked Sendable {
         static let retentionDays = "retentionDays"
         static let showHoverPreview = "showHoverPreview"
         static let launchAtLogin = "launchAtLogin"   // tracked-only; service mgmt is source of truth
+        static let compactMode = "compactMode"
     }
 
     let defaults: UserDefaults
@@ -79,6 +80,14 @@ struct Settings: @unchecked Sendable {
             return defaults.bool(forKey: Key.showHoverPreview)
         }
         nonmutating set { defaults.set(newValue, forKey: Key.showHoverPreview) }
+    }
+
+    var compactMode: Bool {
+        get {
+            if defaults.object(forKey: Key.compactMode) == nil { return false }
+            return defaults.bool(forKey: Key.compactMode)
+        }
+        nonmutating set { defaults.set(newValue, forKey: Key.compactMode) }
     }
 }
 

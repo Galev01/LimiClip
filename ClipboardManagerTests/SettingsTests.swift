@@ -55,4 +55,16 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(AppAppearance.light.rawValue, "light")
         XCTAssertEqual(AppAppearance.dark.rawValue, "dark")
     }
+
+    func testCompactModeDefaultIsFalse() {
+        XCTAssertFalse(Settings(defaults: defaults).compactMode)
+    }
+
+    func testCompactModeRoundtrips() {
+        let s = Settings(defaults: defaults)
+        s.compactMode = true
+        XCTAssertTrue(Settings(defaults: defaults).compactMode)
+        s.compactMode = false
+        XCTAssertFalse(Settings(defaults: defaults).compactMode)
+    }
 }

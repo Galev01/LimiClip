@@ -30,7 +30,10 @@ final class AppCoordinator {
         let drawer = DrawerWindowController(viewModel: viewModel, blobStore: blobStore, store: store, injector: injector)
         self.drawer = drawer
 
-        self.menuBar = MenuBarController { drawer.toggle() }
+        self.menuBar = MenuBarController(
+            onOpenClipboard: { drawer.toggle() },
+            onOpenPreferences: { /* wired in Task S-4 */ }
+        )
         self.hotkey = HotkeyService(
             onToggle: { drawer.toggle() },
             onScreenshot: { AppCoordinator.captureScreenshotToClipboard() }

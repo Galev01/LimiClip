@@ -2,29 +2,81 @@
 import AppKit
 
 @MainActor
-final class MenuBarController {
-    private let statusItem: NSStatusItem
-    private let onActivate: @MainActor () -> Void
+final class MenuBarController: NSObject {
 
-    init(onActivate: @escaping @MainActor () -> Void) {
-        self.onActivate = onActivate
+    private let statusItem: NSStatusItem
+    private let onOpenClipboard: @MainActor () -> Void
+    private let onOpenPreferences: @MainActor () -> Void
+
+    init(
+        onOpenClipboard: @escaping @MainActor () -> Void,
+        onOpenPreferences: @escaping @MainActor () -> Void
+    ) {
+        self.onOpenClipboard = onOpenClipboard
+        self.onOpenPreferences = onOpenPreferences
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        super.init()
         configure()
     }
 
     private func configure() {
         guard let button = statusItem.button else { return }
-        // Use a template SF Symbol; replaced by a custom asset later.
-        let image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "Clipboard Manager")
+        let image = NSImage(systemSymbolName: "doc.on.clipboard",
+                            accessibilityDescription: "Clipboard Manager")
         image?.isTemplate = true
         button.image = image
-        button.target = self
-        button.action = #selector(handleClick)
-        button.sendAction(on: [.leftMouseUp])
+        // Setting `statusItem.menu` makes NSStatusItem show the menu on click
+        // (and removes our previous custom action binding).
+        statusItem.menu = makeMenu()
     }
 
-    @objc private func handleClick() {
-        Log.menuBar.info("menu bar status item clicked")
-        onActivate()
+    private func makeMenu() -> NSMenu {
+        let menu = NSMenu()
+
+        let openItem = NSMenuItem(
+            title: "Open Clipboard",
+            action: #selector(openClipboardClicked),
+            keyEquivalent: "v"
+        )
+        openItem.keyEquivalentModifierMask = [.command, .shift]
+        openItem.target = self
+        menu.addItem(openItem)
+
+        let prefsItem = NSMenuItem(
+            title: "Preferences…",
+            action: #selector(openPreferencesClicked),
+            keyEquivalent: ","
+        )
+        prefsItem.keyEquivalentModifierMask = [.command]
+        prefsItem.target = self
+        menu.addItem(prefsItem)
+
+        menu.addItem(.separator())
+
+        let quitItem = NSMenuItem(
+            title: "Quit Clipboard Manager",
+            action: #selector(quitClicked),
+            keyEquivalent: "q"
+        )
+        quitItem.keyEquivalentModifierMask = [.command]
+        quitItem.target = self
+        menu.addItem(quitItem)
+
+        return menu
+    }
+
+    @objc private func openClipboardClicked() {
+        Log.menuBar.info("menu: open clipboard")
+        onOpenClipboard()
+    }
+
+    @objc private func openPreferencesClicked() {
+        Log.menuBar.info("menu: preferences")
+        onOpenPreferences()
+    }
+
+    @objc private func quitClicked() {
+        Log.menuBar.info("menu: quit")
+        NSApp.terminate(nil)
     }
 }

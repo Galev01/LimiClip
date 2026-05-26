@@ -14,7 +14,12 @@ struct DrawerView: View {
 
     var accessibilityCheck: () -> Bool = { true }
 
-    @State private var accessibilityGranted: Bool = true
+    /// Refresh tick used to recompute live values (Accessibility permission,
+    /// etc.) without relying on @State + .onAppear (which only fires once
+    /// even though our window orders out / front repeatedly). Bumped on a
+    /// timer below.
+    @State private var refreshTick: Int = 0
+
     @State private var searchExpanded: Bool = false
     @State private var hoveredID: Int64? = nil
     @State private var hoverTimer: DispatchWorkItem? = nil
@@ -22,6 +27,15 @@ struct DrawerView: View {
 
     @Environment(\.colorScheme) private var scheme
     private var dark: Bool { scheme == .dark }
+
+    /// Live-read on every body evaluation so the banner disappears the moment
+    /// the user grants the permission in System Settings (no reopen needed).
+    /// The `refreshTick` reference forces SwiftUI to re-invoke the closure
+    /// once per second via the timer below.
+    private var accessibilityGranted: Bool {
+        _ = refreshTick
+        return accessibilityCheck()
+    }
 
     var body: some View {
         ZStack {
@@ -67,7 +81,9 @@ struct DrawerView: View {
         )
         .environment(\.blobStore, blobStore)
         .ignoresSafeArea()
-        .onAppear { accessibilityGranted = accessibilityCheck() }
+        .onReceive(Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()) { _ in
+            refreshTick &+= 1
+        }
         .overlay(alignment: .top) {
             if let hovered = debouncedHoveredItem {
                 HoverPreviewContent(item: hovered)

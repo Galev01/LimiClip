@@ -269,6 +269,14 @@ final class ClipboardStore: @unchecked Sendable {
         postChange()
     }
 
+    func setPinned(itemId: Int64, pinned: Bool) throws {
+        _ = try queue.write { db in
+            try Item.filter(Item.Columns.id == itemId)
+                .updateAll(db, [Item.Columns.pinned.set(to: pinned)])
+        }
+        postChange()
+    }
+
     // MARK: - Retention
 
     /// Hard-delete items whose createdAt is older than `days` days, and any

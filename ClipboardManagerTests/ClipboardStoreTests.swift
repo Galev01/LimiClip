@@ -161,4 +161,46 @@ final class ClipboardStoreTests: XCTestCase {
         XCTAssertEqual(first?.id, second?.id)
         XCTAssertEqual(try store.countItems(), 1)
     }
+
+    func testSetPinnedPinsAnItem() throws {
+        let store = try makeStore()
+        let inserted = try store.recordText("pin me", sourceApp: nil, sourceBundleId: nil)
+        let id = try XCTUnwrap(inserted?.id)
+
+        try store.setPinned(itemId: id, pinned: true)
+
+        let items = try store.recentItems(limit: 10)
+        let found = try XCTUnwrap(items.first { $0.id == id })
+        XCTAssertTrue(found.pinned)
+    }
+
+    func testSetPinnedUnpinsAnItem() throws {
+        let store = try makeStore()
+        let inserted = try store.recordText("unpin me", sourceApp: nil, sourceBundleId: nil)
+        let id = try XCTUnwrap(inserted?.id)
+
+        try store.setPinned(itemId: id, pinned: true)
+        try store.setPinned(itemId: id, pinned: false)
+
+        let items = try store.recentItems(limit: 10)
+        let found = try XCTUnwrap(items.first { $0.id == id })
+        XCTAssertFalse(found.pinned)
+    }
+
+    func testPinnedItemSurvivesPurge() throws {
+        let store = try makeStore()
+        // Insert a stale item that would normally be purged.
+        let stale = Int64(Date().timeIntervalSince1970) - 60 * 60 * 24 * 200  // 200 days ago
+        try store.testingInsertStaleItem(body: "pinned survivor", createdAt: stale)
+
+        let all = try store.recentItems(limit: 10)
+        let staleItem = try XCTUnwrap(all.first { $0.body == "pinned survivor" })
+        let id = try XCTUnwrap(staleItem.id)
+
+        try store.setPinned(itemId: id, pinned: true)
+        try store.purgeOlderThan(days: 0)  // purge everything older than now
+
+        let surviving = try store.recentItems(limit: 10)
+        XCTAssertTrue(surviving.contains { $0.id == id }, "pinned item should survive purge")
+    }
 }

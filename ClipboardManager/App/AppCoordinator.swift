@@ -13,12 +13,16 @@ final class AppCoordinator {
     private let monitor: PasteboardMonitor
     private let retention: RetentionJob
     private let pasteInjector: PasteInjector
-    private let preferencesWindow = PreferencesWindowController()
+    private let exclusionsVM: ExclusionsViewModel
+    private let preferencesWindow: PreferencesWindowController
 
     init() throws {
         let store = try ClipboardStore()
         try store.seedDefaultExclusionsIfNeeded()
         self.store = store
+        let exclusionsVM = ExclusionsViewModel(store: store)
+        self.exclusionsVM = exclusionsVM
+        self.preferencesWindow = PreferencesWindowController(exclusionsVM: exclusionsVM)
 
         let blobStore = try BlobStore()
         self.blobStore = blobStore

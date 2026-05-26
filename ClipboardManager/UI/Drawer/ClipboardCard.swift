@@ -10,6 +10,7 @@ struct ClipboardCard: View {
     var onDelete: ((Item) -> Void)? = nil
     var onOpenURL: ((Item) -> Void)? = nil
     var onRevealInFinder: ((Item) -> Void)? = nil
+    var onPin: ((Item, Bool) -> Void)? = nil
     @Environment(\.colorScheme) private var scheme
     @Environment(\.blobStore) private var blobStore
 
@@ -61,6 +62,12 @@ struct ClipboardCard: View {
             }
             if item.kind == "file" {
                 Button("Reveal in Finder") { onRevealInFinder?(item) }
+            }
+            Divider()
+            if item.pinned {
+                Button("Unpin") { onPin?(item, false) }
+            } else {
+                Button("Pin") { onPin?(item, true) }
             }
             Divider()
             Button("Delete", role: .destructive) { onDelete?(item) }

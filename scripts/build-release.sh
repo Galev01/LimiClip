@@ -92,15 +92,23 @@ echo "📎  Stapling notarization ticket…"
 xcrun stapler staple "$APP_PATH"
 echo "✓  Stapled."
 
-# ── 6. Create DMG ─────────────────────────────────────────────────────────────
+# ── 6. Create DMG with Applications symlink ───────────────────────────────────
 echo "💿  Creating DMG: $DMG_PATH"
+DMG_STAGING="$REPO_ROOT/build/dmg-staging"
+rm -rf "$DMG_STAGING"
+mkdir "$DMG_STAGING"
+cp -R "$APP_PATH" "$DMG_STAGING/"
+ln -s /Applications "$DMG_STAGING/Applications"
+
 rm -f "$DMG_PATH"
 hdiutil create \
     -volname "LimiClip ${VERSION}" \
-    -srcfolder "$APP_PATH" \
+    -srcfolder "$DMG_STAGING" \
     -ov \
     -format UDZO \
     "$DMG_PATH"
+
+rm -rf "$DMG_STAGING"
 
 echo ""
 echo "✅  Done: $DMG_PATH"

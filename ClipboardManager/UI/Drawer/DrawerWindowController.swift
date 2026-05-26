@@ -18,6 +18,7 @@ final class DrawerWindowController {
         var deleteHandler: ((Item) -> Void)!
         var openURLHandler: ((Item) -> Void)!
         var revealHandler: ((Item) -> Void)!
+        var pinHandler: ((Item, Bool) -> Void)!
 
         self.window = DrawerWindow(
             viewModel: viewModel, blobStore: blobStore, store: store,
@@ -26,6 +27,7 @@ final class DrawerWindowController {
             onDelete: { item in deleteHandler(item) },
             onOpenURL: { item in openURLHandler(item) },
             onRevealInFinder: { item in revealHandler(item) },
+            onPin: { item, pinned in pinHandler(item, pinned) },
             accessibilityCheck: { [injector] in injector.hasAccessibilityPermission }
         )
 
@@ -39,6 +41,7 @@ final class DrawerWindowController {
         deleteHandler = { [weak self] item in self?.handleDelete(item: item) }
         openURLHandler = { [weak self] item in self?.handleOpenURL(item: item) }
         revealHandler = { [weak self] item in self?.handleReveal(item: item) }
+        pinHandler = { [weak self] item, pinned in self?.handlePin(item: item, pinned: pinned) }
     }
 
     @objc private func handleDismissRequest() { hide() }
@@ -136,6 +139,12 @@ final class DrawerWindowController {
         guard let id = item.id else { return }
         do { try store.softDelete(itemId: id) }
         catch { Log.drawer.error("delete failed: \(error.localizedDescription, privacy: .public)") }
+    }
+
+    private func handlePin(item: Item, pinned: Bool) {
+        guard let id = item.id else { return }
+        do { try store.setPinned(itemId: id, pinned: pinned) }
+        catch { Log.drawer.error("pin failed: \(error.localizedDescription, privacy: .public)") }
     }
 
     private func handleOpenURL(item: Item) {

@@ -16,6 +16,7 @@ final class DrawerWindow: NSPanel {
         onDelete: @escaping (Item) -> Void,
         onOpenURL: @escaping (Item) -> Void,
         onRevealInFinder: @escaping (Item) -> Void,
+        onPin: @escaping (Item, Bool) -> Void,
         accessibilityCheck: @escaping () -> Bool = { true }
     ) {
         self.viewModel = viewModel
@@ -44,6 +45,7 @@ final class DrawerWindow: NSPanel {
             viewModel: viewModel, blobStore: blobStore,
             onPaste: onPaste, onCopy: onCopy, onDelete: onDelete,
             onOpenURL: onOpenURL, onRevealInFinder: onRevealInFinder,
+            onPin: onPin,
             accessibilityCheck: accessibilityCheck
         ))
         host.translatesAutoresizingMaskIntoConstraints = false

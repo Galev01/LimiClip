@@ -5,18 +5,16 @@ import Foundation
 final class RetentionJob {
 
     private let store: ClipboardStore
-    private let retentionDays: Int
-    private let maxItems: Int
+    private let settings: () -> Settings
 
     private var timer: Timer?
 
-    init(store: ClipboardStore, retentionDays: Int = 90, maxItems: Int = 5_000) {
+    /// `settings` is a closure so tests can inject a custom UserDefaults.
+    init(store: ClipboardStore, settings: @escaping () -> Settings = { Settings() }) {
         self.store = store
-        self.retentionDays = retentionDays
-        self.maxItems = maxItems
+        self.settings = settings
     }
 
-    /// Starts a once-per-hour cleanup timer and runs an immediate pass.
     func start() {
         do { try runOnce() } catch { Log.app.error("retention initial pass: \(error.localizedDescription, privacy: .public)") }
 
@@ -36,9 +34,16 @@ final class RetentionJob {
         timer = nil
     }
 
-    /// One pass: age purge first, then count cap.
+    /// One pass: age purge first, then count cap. Reads current limits from
+    /// settings each time so changes apply on the next hourly tick.
     func runOnce() throws {
-        try store.purgeOlderThan(days: retentionDays)
-        try store.purgeBeyondCount(max: maxItems)
+        let s = settings()
+        // Int.max sentinel means "Forever" / "Unlimited" — skip that purge.
+        if s.retentionDays != .max {
+            try store.purgeOlderThan(days: s.retentionDays)
+        }
+        if s.historyLimit != .max {
+            try store.purgeBeyondCount(max: s.historyLimit)
+        }
     }
 }

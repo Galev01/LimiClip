@@ -20,6 +20,8 @@ struct DrawerView: View {
     /// timer below.
     @State private var refreshTick: Int = 0
 
+    @AppStorage(Settings.Key.showHoverPreview) private var showHoverPreview: Bool = true
+
     @State private var searchExpanded: Bool = false
     @State private var hoveredID: Int64? = nil
     @State private var hoverTimer: DispatchWorkItem? = nil
@@ -85,7 +87,7 @@ struct DrawerView: View {
             refreshTick &+= 1
         }
         .overlay(alignment: .top) {
-            if let hovered = debouncedHoveredItem {
+            if let hovered = debouncedHoveredItem, showHoverPreview {
                 HoverPreviewContent(item: hovered)
                     .padding(.top, 56)
                     .allowsHitTesting(false)
@@ -142,6 +144,7 @@ struct DrawerView: View {
                                 viewModel.jumpTo(index: idx)
                             }
                             .onHover { hovering in
+                                guard showHoverPreview else { return }
                                 hoverTimer?.cancel()
                                 if hovering {
                                     let snapshot = item

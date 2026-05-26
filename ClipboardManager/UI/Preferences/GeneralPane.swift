@@ -6,6 +6,7 @@ struct GeneralPane: View {
     @AppStorage(Settings.Key.historyLimit) private var historyLimit: Int = 5000
     @AppStorage(Settings.Key.retentionDays) private var retentionDays: Int = 90
     @AppStorage(Settings.Key.showHoverPreview) private var showHoverPreview: Bool = true
+    @AppStorage(Settings.Key.compactMode) private var compactMode: Bool = false
 
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
 
@@ -53,6 +54,9 @@ struct GeneralPane: View {
             Section("Drawer") {
                 Toggle(isOn: $showHoverPreview) {
                     Text("Show preview on hover")
+                }
+                Toggle(isOn: $compactMode) {
+                    Text("Compact Mode")
                 }
             }
         }

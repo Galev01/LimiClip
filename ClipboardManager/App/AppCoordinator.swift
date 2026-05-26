@@ -8,6 +8,7 @@ final class AppCoordinator {
     private let viewModel: ClipboardViewModel
     private let menuBar: MenuBarController
     private let drawer: DrawerWindowController
+    private let compactPopup: CompactPopupWindowController
     private let hotkey: HotkeyService
     private let monitor: PasteboardMonitor
     private let retention: RetentionJob
@@ -31,6 +32,9 @@ final class AppCoordinator {
         let drawer = DrawerWindowController(viewModel: viewModel, blobStore: blobStore, store: store, injector: injector)
         self.drawer = drawer
 
+        let compact = CompactPopupWindowController(viewModel: viewModel, blobStore: blobStore, store: store, injector: injector)
+        self.compactPopup = compact
+
         let prefs = self.preferencesWindow
         self.menuBar = MenuBarController(
             onOpenClipboard: { drawer.toggle() },
@@ -38,7 +42,8 @@ final class AppCoordinator {
         )
         self.hotkey = HotkeyService(
             onToggle: { drawer.toggle() },
-            onScreenshot: { AppCoordinator.captureScreenshotToClipboard() }
+            onScreenshot: { AppCoordinator.captureScreenshotToClipboard() },
+            onCompactToggle: { compact.toggle(near: NSEvent.mouseLocation) }
         )
         self.monitor = PasteboardMonitor(store: store, blobStore: blobStore)
         self.retention = RetentionJob(store: store)

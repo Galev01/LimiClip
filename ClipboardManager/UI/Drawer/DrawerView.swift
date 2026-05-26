@@ -140,6 +140,9 @@ struct DrawerView: View {
                             onRevealInFinder: { onRevealInFinder?($0) }
                         )
                             .id(item.id ?? -1)
+                            .onTapGesture(count: 2) {
+                                onPaste?(item, false)
+                            }
                             .onTapGesture {
                                 viewModel.jumpTo(index: idx)
                             }

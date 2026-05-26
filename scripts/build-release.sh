@@ -23,6 +23,7 @@ fi
 ARCHIVE_PATH="$REPO_ROOT/build/LimiClip.xcarchive"
 EXPORT_PATH="$REPO_ROOT/build/LimiClip-export"
 APP_PATH="$EXPORT_PATH/ClipboardManager.app"
+ZIP_PATH="$REPO_ROOT/build/LimiClip-${VERSION}.zip"
 DMG_PATH="$REPO_ROOT/build/LimiClip-${VERSION}.dmg"
 
 # ── Apple ID credentials (set as env vars before running) ────────────────────
@@ -70,9 +71,14 @@ xcodebuild -exportArchive \
 
 echo "✓  Export: $APP_PATH"
 
-# ── 3. Notarize ────────────────────────────────────────────────────────────────
+# ── 3. Zip for notarization (notarytool requires .zip, .pkg, or .dmg) ─────────
+echo "🗜  Zipping app for notarization…"
+rm -f "$ZIP_PATH"
+ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
+
+# ── 4. Notarize ────────────────────────────────────────────────────────────────
 echo "🔏  Submitting for notarization (this may take 1-5 minutes)…"
-xcrun notarytool submit "$APP_PATH" \
+xcrun notarytool submit "$ZIP_PATH" \
     --apple-id "$APPLE_ID" \
     --password "$APPLE_APP_PASSWORD" \
     --team-id "$TEAM_ID" \
@@ -81,12 +87,12 @@ xcrun notarytool submit "$APP_PATH" \
 
 echo "✓  Notarization accepted."
 
-# ── 4. Staple ──────────────────────────────────────────────────────────────────
+# ── 5. Staple ──────────────────────────────────────────────────────────────────
 echo "📎  Stapling notarization ticket…"
 xcrun stapler staple "$APP_PATH"
 echo "✓  Stapled."
 
-# ── 5. Create DMG ─────────────────────────────────────────────────────────────
+# ── 6. Create DMG ─────────────────────────────────────────────────────────────
 echo "💿  Creating DMG: $DMG_PATH"
 rm -f "$DMG_PATH"
 hdiutil create \

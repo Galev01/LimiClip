@@ -56,9 +56,9 @@ struct CompactClipboardCard: View {
         } else if item.kind == "file" {
             let ref = try? FileReference.decodingJSON(item.body)
             let ext = ref?.fileExtension ?? ""
-            Image(systemName: symbolName(for: ext))
+            Image(systemName: FileTypeStyle.symbolName(for: ext))
                 .font(.system(size: 18, weight: .light))
-                .foregroundStyle(colorForExtension(ext))
+                .foregroundStyle(FileTypeStyle.color(for: ext))
         } else {
             let symbol: String = {
                 if item.subtype == TextSubtype.url.rawValue { return "link" }
@@ -105,37 +105,6 @@ struct CompactClipboardCard: View {
         if item.subtype == TextSubtype.url.rawValue { return "URL" }
         if item.subtype == TextSubtype.code.rawValue || item.subtype == TextSubtype.json.rawValue { return "Code" }
         return nil
-    }
-
-    private func symbolName(for ext: String) -> String {
-        switch ext {
-        case "pdf":                                             return "doc.richtext"
-        case "png", "jpg", "jpeg", "gif", "heic", "tiff":      return "photo"
-        case "mp4", "mov", "m4v":                              return "film"
-        case "mp3", "wav", "m4a", "aiff":                     return "music.note"
-        case "zip", "tar", "gz", "7z":                        return "doc.zipper"
-        case "fig":                                            return "paintbrush"
-        case "sketch":                                         return "scribble"
-        case "key", "pages", "numbers":                       return "doc.text"
-        case "xlsx", "csv":                                    return "tablecells"
-        case "docx", "rtf", "txt", "md":                      return "doc.text"
-        default:                                               return "doc"
-        }
-    }
-
-    private func colorForExtension(_ ext: String) -> Color {
-        switch ext {
-        case "pdf":                                            return .red
-        case "fig":                                            return .purple
-        case "sketch":                                         return .orange
-        case "key":                                            return .blue
-        case "xlsx", "csv":                                    return .green
-        case "docx":                                           return .blue
-        case "zip", "tar", "gz", "7z":                        return .gray
-        case "png", "jpg", "jpeg", "gif", "heic", "tiff":     return .pink
-        case "mp4", "mov", "m4v":                             return .purple
-        default:                                               return .secondary
-        }
     }
 
     private func relativeTime(_ epoch: Int64) -> String {

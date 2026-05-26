@@ -110,9 +110,9 @@ struct ClipboardCard: View {
     private var fileContent: some View {
         let ref = (try? FileReference.decodingJSON(item.body))
         VStack(spacing: 8) {
-            Image(systemName: symbolName(for: ref?.fileExtension ?? ""))
+            Image(systemName: FileTypeStyle.symbolName(for: ref?.fileExtension ?? ""))
                 .font(.system(size: 36, weight: .light))
-                .foregroundStyle(colorForExtension(ref?.fileExtension ?? ""))
+                .foregroundStyle(FileTypeStyle.color(for: ref?.fileExtension ?? ""))
             Text(ref?.name ?? "Unknown file")
                 .font(DesignTypography.cardBody)
                 .foregroundStyle(.primary.opacity(dark ? 0.85 : 0.75))
@@ -173,37 +173,6 @@ struct ClipboardCard: View {
         .padding(.vertical, 8)
         .overlay(Rectangle().frame(height: 0.5).foregroundStyle(DesignColors.hairline(dark: dark)),
                  alignment: .top)
-    }
-
-    private func symbolName(for ext: String) -> String {
-        switch ext {
-        case "pdf":                       return "doc.richtext"
-        case "png", "jpg", "jpeg", "gif", "heic", "tiff": return "photo"
-        case "mp4", "mov", "m4v":         return "film"
-        case "mp3", "wav", "m4a", "aiff": return "music.note"
-        case "zip", "tar", "gz", "7z":    return "doc.zipper"
-        case "fig":                       return "paintbrush"
-        case "sketch":                    return "scribble"
-        case "key", "pages", "numbers":   return "doc.text"
-        case "xlsx", "csv":               return "tablecells"
-        case "docx", "rtf", "txt", "md":  return "doc.text"
-        default:                          return "doc"
-        }
-    }
-
-    private func colorForExtension(_ ext: String) -> Color {
-        switch ext {
-        case "pdf":                       return .red
-        case "fig":                       return .purple
-        case "sketch":                    return .orange
-        case "key":                       return .blue
-        case "xlsx", "csv":               return .green
-        case "docx":                      return .blue
-        case "zip", "tar", "gz", "7z":    return .gray
-        case "png", "jpg", "jpeg", "gif", "heic", "tiff": return .pink
-        case "mp4", "mov", "m4v":         return .purple
-        default:                          return .secondary
-        }
     }
 
     private func relativeTime(_ epoch: Int64) -> String {

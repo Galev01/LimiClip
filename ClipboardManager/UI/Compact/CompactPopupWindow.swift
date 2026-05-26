@@ -3,6 +3,7 @@ import AppKit
 import SwiftUI
 
 final class CompactPopupWindow: NSPanel {
+    var onDismiss: (() -> Void)?
 
     init<V: View>(rootView: V) {
         super.init(
@@ -42,7 +43,7 @@ final class CompactPopupWindow: NSPanel {
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { // ESC
-            orderOut(nil)
+            onDismiss?()
         } else {
             super.keyDown(with: event)
         }

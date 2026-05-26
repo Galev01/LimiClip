@@ -26,6 +26,8 @@ final class CompactPopupWindowController {
         )
 
         pasteHandler = { [weak self] item in self?.handlePaste(item: item) }
+
+        self.window.onDismiss = { [weak self] in self?.hide() }
     }
 
     func toggle(near cursor: NSPoint) {

@@ -35,4 +35,11 @@ final class HotkeyServiceTests: XCTestCase {
         XCTAssertTrue(shortcut.modifiers.contains(.shift))
         XCTAssertEqual(shortcut.key, .a)
     }
+
+    func testCompactPopupShortcutHasNoDefault() {
+        XCTAssertNil(
+            KeyboardShortcuts.getShortcut(for: .toggleCompactPopup),
+            "toggleCompactPopup must ship with no default shortcut — user assigns it in Preferences"
+        )
+    }
 }

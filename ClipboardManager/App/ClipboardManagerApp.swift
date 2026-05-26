@@ -8,6 +8,6 @@ struct ClipboardManagerApp: App {
     var body: some Scene {
         // Headless: menu bar only, no Settings or main window.
         // Settings window will be added in Phase 7.
-        Settings { EmptyView() }
+        SwiftUI.Settings { EmptyView() }
     }
 }

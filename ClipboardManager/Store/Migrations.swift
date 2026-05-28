@@ -34,5 +34,13 @@ enum Migrations {
                 t.column("name", .text).notNull()
             }
         }
+
+        migrator.registerMigration("v2-active-index") { db in
+            try db.execute(sql: """
+                CREATE INDEX IF NOT EXISTS items_active_createdAt
+                ON items (createdAt DESC)
+                WHERE deletedAt IS NULL
+                """)
+        }
     }
 }

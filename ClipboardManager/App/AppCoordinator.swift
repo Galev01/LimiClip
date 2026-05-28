@@ -16,6 +16,9 @@ final class AppCoordinator {
     private let exclusionsVM: ExclusionsViewModel
     private let preferencesWindow: PreferencesWindowController
 
+    private var appearanceObserver: NSObjectProtocol?
+    private var lastAppearance: AppAppearance?
+
     init() throws {
         let store = try ClipboardStore()
         try store.seedDefaultExclusionsIfNeeded()
@@ -61,15 +64,17 @@ final class AppCoordinator {
         retention.start()
 
         // Re-apply appearance if the user changes it in Preferences.
-        NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
-                                               object: nil, queue: .main) { [weak self] _ in
+        appearanceObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
+                                                                     object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.applyAppearance() }
         }
     }
 
     private func applyAppearance() {
         let appearance = Settings().appearance
+        guard appearance != lastAppearance else { return }
         NSApp.appearance = appearance.nsAppearance
+        lastAppearance = appearance
     }
 
     /// Spawns `screencapture -i -c` so the user can drag-select a region;

@@ -209,15 +209,22 @@ final class ClipboardStoreTests: XCTestCase {
         let a = try store.recordText("item-a", sourceApp: nil, sourceBundleId: nil)
         let b = try store.recordText("item-b", sourceApp: nil, sourceBundleId: nil)
         let c = try store.recordText("pinned-item", sourceApp: nil, sourceBundleId: nil)
-        try store.setPinned(itemId: c!.id!, pinned: true)
+        let cId = try XCTUnwrap(c?.id)
+        try store.setPinned(itemId: cId, pinned: true)
+        let softDeletedItem = try store.recordText("soft-deleted", sourceApp: nil, sourceBundleId: nil)
+        let softId = try XCTUnwrap(softDeletedItem?.id)
+        try store.softDelete(itemId: softId)
 
         try store.clearAll()
 
+        // Non-pinned active items are gone.
         let remaining = try store.recentItems(limit: 10)
         XCTAssertEqual(remaining.count, 1, "only the pinned item should remain")
         XCTAssertEqual(remaining.first?.body, "pinned-item")
         XCTAssertNil(remaining.first { $0.id == a?.id })
         XCTAssertNil(remaining.first { $0.id == b?.id })
+        // Soft-deleted item (deletedAt IS NOT NULL) must survive clearAll.
+        XCTAssertEqual(try store.countItems(includingDeleted: true), 2) // pinned + soft-deleted
     }
 
     func testClearAllOnEmptyStoreSucceeds() throws {

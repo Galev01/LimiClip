@@ -11,6 +11,7 @@ final class BlobStore: @unchecked Sendable {
 
     private let root: URL
     private let fm: FileManager
+    private let cipher: FieldCipher?
 
     /// Production initializer — uses Application Support / Clipboard Manager / blobs.
     convenience init() throws {
@@ -20,12 +21,14 @@ final class BlobStore: @unchecked Sendable {
         )
         let dir = appSupport.appendingPathComponent("Clipboard Manager", isDirectory: true)
                             .appendingPathComponent("blobs", isDirectory: true)
-        try self.init(rootDirectory: dir)
+        let cipher = FieldCipher(masterKeyData: try DatabaseKey.loadOrCreate())
+        try self.init(rootDirectory: dir, cipher: cipher)
     }
 
-    init(rootDirectory: URL, fileManager: FileManager = .default) throws {
+    init(rootDirectory: URL, fileManager: FileManager = .default, cipher: FieldCipher? = nil) throws {
         self.root = rootDirectory
         self.fm = fileManager
+        self.cipher = cipher
         try fm.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
     }
 
@@ -43,13 +46,15 @@ final class BlobStore: @unchecked Sendable {
         let fullDir = root.appendingPathComponent(relDir, isDirectory: true)
         try fm.createDirectory(at: fullDir, withIntermediateDirectories: true)
         let fullURL = fullDir.appendingPathComponent(filename, isDirectory: false)
-        try data.write(to: fullURL, options: [.atomic])
+        let payload = try cipher.map { try $0.seal(data) } ?? data
+        try payload.write(to: fullURL, options: [.atomic])
         return relPath
     }
 
     func read(relativePath: String) throws -> Data {
         let fullURL = root.appendingPathComponent(relativePath, isDirectory: false)
-        return try Data(contentsOf: fullURL)
+        let raw = try Data(contentsOf: fullURL)
+        return cipher.map { $0.open(raw) } ?? raw
     }
 
     func delete(relativePath: String) throws {

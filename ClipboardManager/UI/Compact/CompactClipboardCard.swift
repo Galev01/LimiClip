@@ -77,7 +77,7 @@ struct CompactClipboardCard: View {
     private var imageThumb: some View {
         if let path = item.blobPath,
            let blobStore,
-           let nsImage = ImageCache.shared.image(forKey: path, url: blobStore.absoluteURL(forRelativePath: path)) {
+           let nsImage = ImageCache.shared.image(forKey: path, blobStore: blobStore, path: path) {
             Image(nsImage: nsImage)
                 .resizable()
                 .aspectRatio(contentMode: .fill)

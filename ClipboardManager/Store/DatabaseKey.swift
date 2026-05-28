@@ -3,9 +3,10 @@ import Foundation
 import Security
 import CryptoKit
 
-/// Manages the AES-256 passphrase used to open the encrypted SQLite database.
-/// The key is generated once and stored in the user's Keychain so subsequent
-/// launches can reopen the database.
+/// Manages the AES-256 master key used to encrypt sensitive clipboard data at
+/// rest (clipboard fields and image blobs — see `FieldCipher`). The key is
+/// generated once and stored in the user's Keychain so subsequent launches can
+/// decrypt existing data.
 enum DatabaseKey {
 
     private static let service = "dev.gallev.ClipboardManager.db-key"
@@ -76,7 +77,7 @@ enum DatabaseKey {
     }
 
     /// Removes the key from Keychain. Used by tests; not exposed to users.
-    /// After removal, any existing DB file becomes unreadable.
+    /// After removal, existing encrypted fields and blobs become unreadable.
     static func deleteForTests() {
         let query: [String: Any] = [
             kSecClass as String:       kSecClassGenericPassword,

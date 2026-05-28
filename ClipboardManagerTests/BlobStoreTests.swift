@@ -75,4 +75,34 @@ final class BlobStoreTests: XCTestCase {
         XCTAssertThrowsError(try store.read(relativePath: a))
         XCTAssertThrowsError(try store.read(relativePath: b))
     }
+
+    // MARK: - Encryption
+
+    private func makeEncryptedStore() throws -> BlobStore {
+        let cipher = FieldCipher(masterKeyData: Data(repeating: 9, count: 32))
+        return try BlobStore(rootDirectory: tempRoot, cipher: cipher)
+    }
+
+    func testCipherEncryptsBytesOnDiskButRoundtrips() throws {
+        let encStore = try makeEncryptedStore()
+        let original = Data("a screenshot's worth of secret pixels".utf8)
+        let relPath = try encStore.write(data: original, fileExtension: "png")
+
+        // On-disk bytes must be ciphertext, not the original.
+        let onDisk = try Data(contentsOf: encStore.absoluteURL(forRelativePath: relPath))
+        XCTAssertNotEqual(onDisk, original, "blob must be encrypted at rest")
+        XCTAssertFalse(onDisk.starts(with: Data("a screenshot".utf8)))
+
+        // But reading through the store returns the original.
+        XCTAssertEqual(try encStore.read(relativePath: relPath), original)
+    }
+
+    func testEncryptedStoreReadsLegacyPlaintextBlob() throws {
+        // Simulate a blob written before encryption: a raw PNG on disk.
+        let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 42, 7])
+        let relPath = try store.write(data: png, fileExtension: "png")  // plaintext store
+        let encStore = try makeEncryptedStore()                          // same tempRoot
+        XCTAssertEqual(try encStore.read(relativePath: relPath), png,
+                       "legacy plaintext blobs must still read correctly after encryption ships")
+    }
 }

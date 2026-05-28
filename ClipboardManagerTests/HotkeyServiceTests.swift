@@ -6,8 +6,11 @@ final class HotkeyServiceTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        // Reset any user-stored value so the default (or nil) is what we read.
-        KeyboardShortcuts.reset(.toggleCompactPopup)
+        // Reset any user-stored overrides so each test reads the compiled-in
+        // default (or nil) — not whatever a running app instance persisted to
+        // the shared UserDefaults domain (the test host shares the app's
+        // bundle id, so live shortcut bindings would otherwise leak in).
+        KeyboardShortcuts.reset(.toggleDrawer, .screenshotToClipboard, .toggleCompactPopup)
     }
 
     func testToggleDrawerShortcutHasDefault() {

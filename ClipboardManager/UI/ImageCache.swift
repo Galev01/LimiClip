@@ -16,12 +16,15 @@ final class ImageCache: @unchecked Sendable {
 
     init() {}
 
-    /// Returns the decoded image for `key`, decoding from `url` on a miss.
-    /// Returns nil if the file cannot be read.
-    func image(forKey key: String, url: URL) -> NSImage? {
+    /// Returns the decoded image for `key`, reading + decrypting the blob via
+    /// `blobStore` on a miss. Returns nil if the blob cannot be read/decoded.
+    /// Decryption happens at most once per key — every later render is a cache
+    /// hit, so encrypting blobs does not add per-render cost.
+    func image(forKey key: String, blobStore: BlobStore, path: String) -> NSImage? {
         let nsKey = key as NSString
         if let hit = cache.object(forKey: nsKey) { return hit }
-        guard let image = NSImage(contentsOf: url) else { return nil }
+        guard let data = try? blobStore.read(relativePath: path),
+              let image = NSImage(data: data) else { return nil }
         cache.setObject(image, forKey: nsKey)
         return image
     }

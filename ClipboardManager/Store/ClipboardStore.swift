@@ -6,13 +6,17 @@ import CoreGraphics
 
 /// Thread-safe SQLite-backed store for clipboard history.
 ///
-/// Backed by GRDB. The encryption key lives in the user's Keychain (see
-/// `DatabaseKey`) — the actual SQLCipher integration is a follow-up; for
-/// Phase 2 the production database is plain SQLite. The store is `Sendable`
-/// because it wraps a `DatabaseQueue` which serialises all access.
+/// Backed by GRDB. Sensitive columns (`body`, `sourceApp`, `sourceBundleId`)
+/// are encrypted at the application layer with AES-256-GCM via `FieldCipher`,
+/// using the key in the user's Keychain (`DatabaseKey`); the dedup `contentHash`
+/// is a keyed HMAC. So clipboard contents are ciphertext at rest even though the
+/// SQLite file itself is standard SQLite (`secure_delete` zeroes freed pages).
+/// The store is `Sendable` because it wraps a `DatabaseQueue` which serialises
+/// all access.
 final class ClipboardStore: @unchecked Sendable {
 
     private let queue: any DatabaseWriter
+    private let cipher: FieldCipher
 
     /// Hard caps enforced on write, independent of the user's history-size
     /// setting. Pins are exempt from retention purges, so they're bounded
@@ -24,28 +28,96 @@ final class ClipboardStore: @unchecked Sendable {
     // MARK: - Initialisation
 
     /// Production init: opens (and migrates) the database file in
-    /// Application Support.
+    /// Application Support. Sensitive columns are encrypted at the application
+    /// layer with the key in `DatabaseKey` (see `FieldCipher`); the SQLite file
+    /// itself is standard SQLite, with `secure_delete` on so freed pages are
+    /// zeroed.
     convenience init() throws {
-        // Note: SQLCipher passphrase wiring is deferred — this opens a
-        // standard SQLite file. The DatabaseKey machinery still runs so the
-        // key exists by the time we add encryption.
-        _ = try DatabaseKey.loadOrCreate()
+        let cipher = FieldCipher(masterKeyData: try DatabaseKey.loadOrCreate())
         let url = try Self.databaseURL()
-        let queue = try DatabaseQueue(path: url.path)
-        try self.init(queue: queue)
+        try self.init(path: url.path, cipher: cipher)
+    }
+
+    /// Opens (and migrates) the database file at `path` with the given cipher.
+    convenience init(path: String, cipher: FieldCipher) throws {
+        let queue = try DatabaseQueue(path: path, configuration: Self.makeConfiguration())
+        try self.init(queue: queue, cipher: cipher)
     }
 
     /// Init from a prepared configuration (used by tests with an in-memory DB).
-    convenience init(configuration: Configuration) throws {
+    convenience init(
+        configuration: Configuration,
+        cipher: FieldCipher = FieldCipher(masterKeyData: Data(repeating: 7, count: 32))
+    ) throws {
         let queue = try DatabaseQueue(configuration: configuration)
-        try self.init(queue: queue)
+        try self.init(queue: queue, cipher: cipher)
     }
 
-    private init(queue: any DatabaseWriter) throws {
+    private init(queue: any DatabaseWriter, cipher: FieldCipher) throws {
         self.queue = queue
+        self.cipher = cipher
         var migrator = DatabaseMigrator()
         Migrations.register(&migrator)
         try migrator.migrate(queue)
+        try migrateUnencryptedRows()
+    }
+
+    /// Shared DB configuration. `secure_delete` zeroes freed pages so deleted
+    /// rows (e.g. after Clear All) can't be recovered from the freelist.
+    static func makeConfiguration() -> Configuration {
+        var config = Configuration()
+        config.prepareDatabase { db in
+            try db.execute(sql: "PRAGMA secure_delete = ON")
+        }
+        return config
+    }
+
+    /// One-time, idempotent migration of legacy plaintext rows (written before
+    /// encryption shipped) to encrypted form. A row whose `body` is already
+    /// sealed is skipped, so this is cheap on every launch and safe to re-run.
+    /// Text/file rows also get their dedup hash re-keyed (HMAC); image rows keep
+    /// their high-entropy SHA256. Runs `VACUUM` only if anything changed, to
+    /// purge the now-stale plaintext from the freelist.
+    private func migrateUnencryptedRows() throws {
+        let migrated = try queue.write { db -> Int in
+            var count = 0
+            let rows = try Row.fetchAll(db, sql: "SELECT id, kind, body, sourceApp, sourceBundleId FROM items")
+            for row in rows {
+                let body: String = row["body"]
+                if cipher.isSealed(body) { continue }
+
+                let id: Int64 = row["id"]
+                let kind: String = row["kind"]
+                let app: String? = row["sourceApp"]
+                let bundle: String? = row["sourceBundleId"]
+
+                let sealedBody = try cipher.seal(body)
+                let sealedApp = try app.map { try cipher.seal($0) }
+                let sealedBundle = try bundle.map { try cipher.seal($0) }
+
+                switch kind {
+                case "text":
+                    try db.execute(
+                        sql: "UPDATE items SET body = ?, sourceApp = ?, sourceBundleId = ?, contentHash = ? WHERE id = ?",
+                        arguments: [sealedBody, sealedApp, sealedBundle, cipher.dedupHash(body), id])
+                case "file":
+                    let path = (try? FileReference.decodingJSON(body))?.path ?? body
+                    try db.execute(
+                        sql: "UPDATE items SET body = ?, sourceApp = ?, sourceBundleId = ?, contentHash = ? WHERE id = ?",
+                        arguments: [sealedBody, sealedApp, sealedBundle, cipher.dedupHash(path), id])
+                default:
+                    // image (and anything else): keep the existing content hash.
+                    try db.execute(
+                        sql: "UPDATE items SET body = ?, sourceApp = ?, sourceBundleId = ? WHERE id = ?",
+                        arguments: [sealedBody, sealedApp, sealedBundle, id])
+                }
+                count += 1
+            }
+            return count
+        }
+        if migrated > 0 {
+            try queue.writeWithoutTransaction { db in try db.execute(sql: "VACUUM") }
+        }
     }
 
     /// Application Support / Clipboard Manager / clipboard.sqlite
@@ -66,17 +138,19 @@ final class ClipboardStore: @unchecked Sendable {
 
     /// In-memory configuration. For unit tests only.
     static func testingConfiguration() -> Configuration {
-        Configuration()
+        makeConfiguration()
     }
 
     func testingInsertStaleItem(body: String, createdAt: Int64) throws {
+        let hash = cipher.dedupHash(body)
+        let sealedBody = try cipher.seal(body)
         try queue.write { db in
             var item = Item(
                 id: nil,
                 kind: "text",
                 subtype: "plain",
-                contentHash: Self.hash(body),
-                body: body,
+                contentHash: hash,
+                body: sealedBody,
                 blobPath: nil,
                 dimensions: nil,
                 byteSize: body.utf8.count,
@@ -107,7 +181,10 @@ final class ClipboardStore: @unchecked Sendable {
 
         let subtype = SubtypeDetector.detect(raw)
         let kindVal: ItemKind = .text(subtype)
-        let hash = Self.hash(raw)
+        let hash = cipher.dedupHash(raw)
+        let sealedBody = try cipher.seal(raw)
+        let sealedApp = try sealOptional(sourceApp)
+        let sealedBundle = try sealOptional(sourceBundleId)
         let now = Int64(Date().timeIntervalSince1970)
 
         let result: Item = try queue.write { db in
@@ -125,12 +202,12 @@ final class ClipboardStore: @unchecked Sendable {
                 kind: kindVal.kindColumn,
                 subtype: kindVal.subtypeColumn,
                 contentHash: hash,
-                body: raw,
+                body: sealedBody,
                 blobPath: nil,
                 dimensions: nil,
                 byteSize: raw.utf8.count,
-                sourceApp: sourceApp,
-                sourceBundleId: sourceBundleId,
+                sourceApp: sealedApp,
+                sourceBundleId: sealedBundle,
                 createdAt: now,
                 pinned: false,
                 snippetId: nil,
@@ -140,7 +217,7 @@ final class ClipboardStore: @unchecked Sendable {
             return item
         }
         postChange()
-        return result
+        return decrypt(result)
     }
 
     /// Records an image clipboard item. `contentHash` is the SHA256 of the
@@ -163,6 +240,13 @@ final class ClipboardStore: @unchecked Sendable {
         }
         let now = Int64(Date().timeIntervalSince1970)
         let dimsString = "\(Int(dimensions.width))x\(Int(dimensions.height))"
+        // contentHash stays the caller's SHA256 of the original (high-entropy)
+        // image bytes — not brute-forceable, so no keyed hash needed. The
+        // blobPath column stays plaintext (blob GC matches it against disk);
+        // only the blob file's bytes are encrypted, by BlobStore.
+        let sealedBody = try cipher.seal(blobPath)
+        let sealedApp = try sealOptional(sourceApp)
+        let sealedBundle = try sealOptional(sourceBundleId)
 
         let result: Item = try queue.write { db in
             if var existing = try Item
@@ -178,12 +262,12 @@ final class ClipboardStore: @unchecked Sendable {
                 kind: "image",
                 subtype: nil,
                 contentHash: contentHash,
-                body: blobPath,
+                body: sealedBody,
                 blobPath: blobPath,
                 dimensions: dimsString,
                 byteSize: byteSize,
-                sourceApp: sourceApp,
-                sourceBundleId: sourceBundleId,
+                sourceApp: sealedApp,
+                sourceBundleId: sealedBundle,
                 createdAt: now,
                 pinned: false,
                 snippetId: nil,
@@ -194,7 +278,7 @@ final class ClipboardStore: @unchecked Sendable {
             return item
         }
         postChange()
-        return result
+        return decrypt(result)
     }
 
     /// Records a file clipboard item from a `FileReference`. Dedupe is by
@@ -210,8 +294,10 @@ final class ClipboardStore: @unchecked Sendable {
             return nil
         }
         let now = Int64(Date().timeIntervalSince1970)
-        let body = try reference.encodedJSON()
-        let hash = Self.hash(reference.path)
+        let hash = cipher.dedupHash(reference.path)
+        let sealedBody = try cipher.seal(try reference.encodedJSON())
+        let sealedApp = try sealOptional(sourceApp)
+        let sealedBundle = try sealOptional(sourceBundleId)
 
         let result: Item = try queue.write { db in
             if var existing = try Item
@@ -227,12 +313,12 @@ final class ClipboardStore: @unchecked Sendable {
                 kind: "file",
                 subtype: nil,
                 contentHash: hash,
-                body: body,
+                body: sealedBody,
                 blobPath: nil,
                 dimensions: nil,
                 byteSize: Int(reference.byteSize),
-                sourceApp: sourceApp,
-                sourceBundleId: sourceBundleId,
+                sourceApp: sealedApp,
+                sourceBundleId: sealedBundle,
                 createdAt: now,
                 pinned: false,
                 snippetId: nil,
@@ -242,7 +328,7 @@ final class ClipboardStore: @unchecked Sendable {
             return item
         }
         postChange()
-        return result
+        return decrypt(result)
     }
 
     // MARK: - Queries
@@ -256,14 +342,16 @@ final class ClipboardStore: @unchecked Sendable {
     }
 
     /// Most-recent first, deleted items excluded. Caller specifies a hard cap.
+    /// Sensitive columns are decrypted before returning.
     func recentItems(limit: Int) throws -> [Item] {
-        try queue.read { db in
+        let rows = try queue.read { db in
             try Item
                 .filter(Item.Columns.deletedAt == nil)
                 .order(Item.Columns.createdAt.desc, Item.Columns.id.desc)
                 .limit(limit)
                 .fetchAll(db)
         }
+        return rows.map(decrypt)
     }
 
     /// Every blob path referenced by any item row — including soft-deleted
@@ -289,12 +377,15 @@ final class ClipboardStore: @unchecked Sendable {
         postChange()
     }
 
-    /// Hard-deletes all non-pinned, non-soft-deleted items. Pinned items are preserved.
+    /// Hard-deletes all non-pinned, non-soft-deleted items. Pinned items are
+    /// preserved. Runs `VACUUM` afterwards so the deleted rows' bytes are
+    /// reclaimed and not left recoverable in the database file.
     func clearAll() throws {
         _ = try queue.write { db in
             try Item.filter(Item.Columns.pinned == false && Item.Columns.deletedAt == nil)
                 .deleteAll(db)
         }
+        try queue.writeWithoutTransaction { db in try db.execute(sql: "VACUUM") }
         postChange()
     }
 
@@ -417,11 +508,21 @@ final class ClipboardStore: @unchecked Sendable {
         }
     }
 
-    // MARK: - Hashing
+    // MARK: - Field encryption
 
-    private static func hash(_ s: String) -> String {
-        let digest = SHA256.hash(data: Data(s.utf8))
-        return digest.map { String(format: "%02x", $0) }.joined()
+    private func sealOptional(_ s: String?) throws -> String? {
+        guard let s else { return nil }
+        return try cipher.seal(s)
+    }
+
+    /// Returns a copy of `item` with its sensitive columns decrypted, for handing
+    /// back to callers/UI. Legacy plaintext fields pass through unchanged.
+    private func decrypt(_ item: Item) -> Item {
+        var copy = item
+        copy.body = cipher.open(item.body)
+        if let app = item.sourceApp { copy.sourceApp = cipher.open(app) }
+        if let bundle = item.sourceBundleId { copy.sourceBundleId = cipher.open(bundle) }
+        return copy
     }
 
     // MARK: - Change notifications

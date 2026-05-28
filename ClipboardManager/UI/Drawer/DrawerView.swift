@@ -219,8 +219,8 @@ struct DrawerView: View {
             Text("⏎ paste · ⌫ delete · / search")
             if viewModel.items.contains(where: { !$0.pinned }) {
                 Button("Clear") { onClearAll?() }
-                    .foregroundStyle(Color.red.opacity(0.8))
                     .buttonStyle(.plain)
+                    .foregroundStyle(Color.red.opacity(0.8))
             }
         }
         .font(.system(size: 11))

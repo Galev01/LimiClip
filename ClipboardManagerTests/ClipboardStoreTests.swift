@@ -203,4 +203,26 @@ final class ClipboardStoreTests: XCTestCase {
         let surviving = try store.recentItems(limit: 10)
         XCTAssertTrue(surviving.contains { $0.id == id }, "pinned item should survive purge")
     }
+
+    func testClearAllDeletesNonPinnedItems() throws {
+        let store = try makeStore()
+        let a = try store.recordText("item-a", sourceApp: nil, sourceBundleId: nil)
+        let b = try store.recordText("item-b", sourceApp: nil, sourceBundleId: nil)
+        let c = try store.recordText("pinned-item", sourceApp: nil, sourceBundleId: nil)
+        try store.setPinned(itemId: c!.id!, pinned: true)
+
+        try store.clearAll()
+
+        let remaining = try store.recentItems(limit: 10)
+        XCTAssertEqual(remaining.count, 1, "only the pinned item should remain")
+        XCTAssertEqual(remaining.first?.body, "pinned-item")
+        XCTAssertNil(remaining.first { $0.id == a?.id })
+        XCTAssertNil(remaining.first { $0.id == b?.id })
+    }
+
+    func testClearAllOnEmptyStoreSucceeds() throws {
+        let store = try makeStore()
+        XCTAssertNoThrow(try store.clearAll())
+        XCTAssertEqual(try store.countItems(), 0)
+    }
 }

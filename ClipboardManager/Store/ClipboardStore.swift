@@ -269,6 +269,15 @@ final class ClipboardStore: @unchecked Sendable {
         postChange()
     }
 
+    /// Hard-deletes all non-pinned, non-soft-deleted items. Pinned items are preserved.
+    func clearAll() throws {
+        _ = try queue.write { db in
+            try Item.filter(Item.Columns.pinned == false && Item.Columns.deletedAt == nil)
+                .deleteAll(db)
+        }
+        postChange()
+    }
+
     func setPinned(itemId: Int64, pinned: Bool) throws {
         _ = try queue.write { db in
             try Item.filter(Item.Columns.id == itemId)

@@ -35,6 +35,9 @@ enum Migrations {
             }
         }
 
+        // Fixes a full-table-scan + temp B-tree on every clipboard change.
+        // Partial index lets the primary read query (recentItems) use the index directly.
+        // GRDB's create(index:) does not support partial indexes; raw SQL required.
         migrator.registerMigration("v2-active-index") { db in
             try db.execute(sql: """
                 CREATE INDEX IF NOT EXISTS items_active_createdAt

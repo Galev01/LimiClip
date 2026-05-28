@@ -1,6 +1,5 @@
 // ClipboardManager/ClipboardViewModel.swift
 import Foundation
-import Combine
 
 enum DrawerTab: String, CaseIterable, Identifiable, Sendable {
     case all, text, images, files, pinned
@@ -21,12 +20,13 @@ final class ClipboardViewModel: ObservableObject {
 
     @Published private(set) var items: [Item] = []
     @Published var selectedTab: DrawerTab = .all {
-        didSet { focusedIndex = 0 }
+        didSet { focusedIndex = 0; refilter() }
     }
     @Published var searchQuery: String = "" {
-        didSet { focusedIndex = 0 }
+        didSet { focusedIndex = 0; refilter() }
     }
     @Published private(set) var focusedIndex: Int = 0
+    @Published private(set) var filteredItems: [Item] = []
 
     private let store: ClipboardStore
     private let visibleLimit: Int
@@ -56,10 +56,11 @@ final class ClipboardViewModel: ObservableObject {
             Log.app.error("view model reload failed: \(error.localizedDescription, privacy: .public)")
             items = []
         }
+        refilter()
         focusedIndex = min(focusedIndex, max(0, filteredItems.count - 1))
     }
 
-    var filteredItems: [Item] {
+    private func refilter() {
         var list = items
         switch selectedTab {
         case .all:    break
@@ -75,7 +76,7 @@ final class ClipboardViewModel: ObservableObject {
                 return bag.contains(q)
             }
         }
-        return list
+        filteredItems = list
     }
 
     var currentItem: Item? {

@@ -19,6 +19,7 @@ final class DrawerWindowController {
         var openURLHandler: ((Item) -> Void)!
         var revealHandler: ((Item) -> Void)!
         var pinHandler: ((Item, Bool) -> Void)!
+        var clearAllHandler: (() -> Void)!
 
         self.window = DrawerWindow(
             viewModel: viewModel, blobStore: blobStore, store: store,
@@ -28,6 +29,7 @@ final class DrawerWindowController {
             onOpenURL: { item in openURLHandler(item) },
             onRevealInFinder: { item in revealHandler(item) },
             onPin: { item, pinned in pinHandler(item, pinned) },
+            onClearAll: { clearAllHandler() },
             accessibilityCheck: { [injector] in injector.hasAccessibilityPermission }
         )
 
@@ -42,6 +44,7 @@ final class DrawerWindowController {
         openURLHandler = { [weak self] item in self?.handleOpenURL(item: item) }
         revealHandler = { [weak self] item in self?.handleReveal(item: item) }
         pinHandler = { [weak self] item, pinned in self?.handlePin(item: item, pinned: pinned) }
+        clearAllHandler = { [weak self] in self?.handleClearAll() }
     }
 
     @objc private func handleDismissRequest() { hide() }
@@ -160,5 +163,20 @@ final class DrawerWindowController {
         let url = URL(fileURLWithPath: ref.path)
         NSWorkspace.shared.activateFileViewerSelecting([url])
         hide()
+    }
+
+    private func handleClearAll() {
+        let alert = NSAlert()
+        alert.messageText = "Clear clipboard history?"
+        alert.informativeText = "All items will be removed. Pinned items will be kept."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Clear")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        do {
+            try store.clearAll()
+        } catch {
+            Log.drawer.error("clearAll failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 }

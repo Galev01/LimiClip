@@ -16,7 +16,7 @@ final class AppCoordinator {
     private let exclusionsVM: ExclusionsViewModel
     private let preferencesWindow: PreferencesWindowController
 
-    private var appearanceObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var appearanceObserver: NSObjectProtocol?
     private var lastAppearance: AppAppearance?
 
     init() throws {
@@ -67,6 +67,12 @@ final class AppCoordinator {
         appearanceObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
                                                                      object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.applyAppearance() }
+        }
+    }
+
+    deinit {
+        if let token = appearanceObserver {
+            NotificationCenter.default.removeObserver(token)
         }
     }
 

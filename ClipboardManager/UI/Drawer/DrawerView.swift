@@ -12,6 +12,7 @@ struct DrawerView: View {
     var onOpenURL: ((Item) -> Void)? = nil
     var onRevealInFinder: ((Item) -> Void)? = nil
     var onPin: ((Item, Bool) -> Void)? = nil
+    var onClearAll: (() -> Void)? = nil
 
     var accessibilityCheck: () -> Bool = { true }
 
@@ -216,6 +217,11 @@ struct DrawerView: View {
                  : "\(count) of \(total) matched")
             Spacer()
             Text("⏎ paste · ⌫ delete · / search")
+            if viewModel.items.contains(where: { !$0.pinned }) {
+                Button("Clear") { onClearAll?() }
+                    .foregroundStyle(Color.red.opacity(0.8))
+                    .buttonStyle(.plain)
+            }
         }
         .font(.system(size: 11))
         .foregroundStyle(.primary.opacity(dark ? 0.2 : 0.18))

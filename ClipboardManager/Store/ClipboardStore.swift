@@ -14,6 +14,13 @@ final class ClipboardStore: @unchecked Sendable {
 
     private let queue: any DatabaseWriter
 
+    /// Hard caps enforced on write, independent of the user's history-size
+    /// setting. Pins are exempt from retention purges, so they're bounded
+    /// here; photos are bounded so the drawer never has to decode more than a
+    /// handful of image thumbnails.
+    static let maxPinnedItems = 15
+    static let maxImages = 5
+
     // MARK: - Initialisation
 
     /// Production init: opens (and migrates) the database file in
@@ -183,6 +190,7 @@ final class ClipboardStore: @unchecked Sendable {
                 deletedAt: nil
             )
             try item.insert(db)
+            try Self.enforceImageCap(db)
             return item
         }
         postChange()
@@ -258,6 +266,18 @@ final class ClipboardStore: @unchecked Sendable {
         }
     }
 
+    /// Every blob path referenced by any item row — including soft-deleted
+    /// rows, which still own their blob until they are hard-deleted. Used by
+    /// blob garbage collection to decide which on-disk files are orphans.
+    func referencedBlobPaths() throws -> Set<String> {
+        try queue.read { db in
+            let paths = try String.fetchAll(
+                db, sql: "SELECT blobPath FROM items WHERE blobPath IS NOT NULL"
+            )
+            return Set(paths)
+        }
+    }
+
     // MARK: - Soft delete
 
     func softDelete(itemId: Int64) throws {
@@ -282,8 +302,42 @@ final class ClipboardStore: @unchecked Sendable {
         _ = try queue.write { db in
             try Item.filter(Item.Columns.id == itemId)
                 .updateAll(db, [Item.Columns.pinned.set(to: pinned)])
+            if pinned { try Self.enforcePinnedCap(db) }
         }
         postChange()
+    }
+
+    // MARK: - Caps
+
+    /// Keeps at most `maxImages` non-pinned, non-deleted image rows, dropping
+    /// the oldest. Set-based so it never round-trips ids through Swift.
+    private static func enforceImageCap(_ db: Database) throws {
+        try db.execute(sql: """
+            DELETE FROM items
+            WHERE kind = 'image' AND pinned = 0 AND deletedAt IS NULL
+              AND id NOT IN (
+                SELECT id FROM items
+                WHERE kind = 'image' AND pinned = 0 AND deletedAt IS NULL
+                ORDER BY createdAt DESC, id DESC
+                LIMIT \(maxImages)
+              )
+            """)
+    }
+
+    /// Keeps at most `maxPinnedItems` pinned, non-deleted rows by unpinning the
+    /// oldest. The rows survive (they re-enter normal history), only the pin is
+    /// dropped.
+    private static func enforcePinnedCap(_ db: Database) throws {
+        try db.execute(sql: """
+            UPDATE items SET pinned = 0
+            WHERE pinned = 1 AND deletedAt IS NULL
+              AND id NOT IN (
+                SELECT id FROM items
+                WHERE pinned = 1 AND deletedAt IS NULL
+                ORDER BY createdAt DESC, id DESC
+                LIMIT \(maxPinnedItems)
+              )
+            """)
     }
 
     // MARK: - Retention

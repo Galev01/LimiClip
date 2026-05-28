@@ -61,7 +61,7 @@ struct Settings: @unchecked Sendable {
     var historyLimit: Int {
         get {
             let v = defaults.integer(forKey: Key.historyLimit)
-            return v == 0 ? 5000 : v
+            return v == 0 ? 100 : v
         }
         nonmutating set { defaults.set(newValue, forKey: Key.historyLimit) }
     }

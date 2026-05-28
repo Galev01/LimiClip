@@ -5,13 +5,16 @@ import Foundation
 final class RetentionJob {
 
     private let store: ClipboardStore
+    private let blobStore: BlobStore?
     private let settings: () -> Settings
 
     private var timer: Timer?
 
     /// `settings` is a closure so tests can inject a custom UserDefaults.
-    init(store: ClipboardStore, settings: @escaping () -> Settings = { Settings() }) {
+    /// `blobStore` is optional so tests that don't exercise blob GC can omit it.
+    init(store: ClipboardStore, blobStore: BlobStore? = nil, settings: @escaping () -> Settings = { Settings() }) {
         self.store = store
+        self.blobStore = blobStore
         self.settings = settings
     }
 
@@ -44,6 +47,15 @@ final class RetentionJob {
         }
         if s.historyLimit != .max {
             try store.purgeBeyondCount(max: s.historyLimit)
+        }
+        // Reclaim disk: delete blob files no longer referenced by any row
+        // (orphaned by count/age purges, soft-delete hard-deletes, or the
+        // photo cap's drop-oldest eviction).
+        if let blobStore {
+            let removed = try blobStore.purgeOrphans(referenced: try store.referencedBlobPaths())
+            if !removed.isEmpty {
+                Log.app.info("blob GC removed \(removed.count, privacy: .public) orphan blob(s)")
+            }
         }
     }
 }

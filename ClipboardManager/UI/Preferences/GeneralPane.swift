@@ -3,7 +3,7 @@ import SwiftUI
 
 struct GeneralPane: View {
     @AppStorage(Settings.Key.appearance) private var appearanceRaw: String = AppAppearance.system.rawValue
-    @AppStorage(Settings.Key.historyLimit) private var historyLimit: Int = 5000
+    @AppStorage(Settings.Key.historyLimit) private var historyLimit: Int = 100
     @AppStorage(Settings.Key.retentionDays) private var retentionDays: Int = 90
     @AppStorage(Settings.Key.showHoverPreview) private var showHoverPreview: Bool = true
     @AppStorage(Settings.Key.compactMode) private var compactMode: Bool = false
@@ -37,11 +37,9 @@ struct GeneralPane: View {
 
             Section("History") {
                 Picker("Max items", selection: $historyLimit) {
-                    Text("500").tag(500)
-                    Text("1,000").tag(1000)
-                    Text("5,000").tag(5000)
-                    Text("10,000").tag(10000)
-                    Text("Unlimited").tag(Int.max)
+                    Text("25").tag(25)
+                    Text("50").tag(50)
+                    Text("100").tag(100)
                 }
                 Picker("Keep for", selection: $retentionDays) {
                     Text("7 days").tag(7)

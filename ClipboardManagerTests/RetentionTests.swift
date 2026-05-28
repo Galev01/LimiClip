@@ -1,8 +1,33 @@
 import XCTest
+import CoreGraphics
 @testable import ClipboardManager
 
 @MainActor
 final class RetentionTests: XCTestCase {
+
+    func testRunGarbageCollectsOrphanBlobs() throws {
+        let store = try ClipboardStore(configuration: ClipboardStore.testingConfiguration())
+        let blobRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("retention-blobs-\(UUID().uuidString)", isDirectory: true)
+        let blobStore = try BlobStore(rootDirectory: blobRoot)
+        defer { try? FileManager.default.removeItem(at: blobRoot) }
+
+        // One blob referenced by a DB row; one orphan present only on disk.
+        let referenced = try blobStore.write(data: Data([1, 2, 3]), fileExtension: "png")
+        _ = try store.recordImage(
+            contentHash: "h", blobPath: referenced,
+            dimensions: CGSize(width: 1, height: 1), byteSize: 3,
+            sourceApp: nil, sourceBundleId: nil
+        )
+        let orphan = try blobStore.write(data: Data([9, 9, 9]), fileExtension: "png")
+
+        let defaults = UserDefaults(suiteName: "retention-gc-\(UUID().uuidString)")!
+        let job = RetentionJob(store: store, blobStore: blobStore, settings: { Settings(defaults: defaults) })
+        try job.runOnce()
+
+        XCTAssertNoThrow(try blobStore.read(relativePath: referenced), "referenced blob survives GC")
+        XCTAssertThrowsError(try blobStore.read(relativePath: orphan), "orphan blob is collected")
+    }
 
     func testRunPurgesByAgeAndCount() throws {
         let store = try ClipboardStore(configuration: ClipboardStore.testingConfiguration())

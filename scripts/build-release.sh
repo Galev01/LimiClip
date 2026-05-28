@@ -26,13 +26,21 @@ APP_PATH="$EXPORT_PATH/ClipboardManager.app"
 ZIP_PATH="$REPO_ROOT/build/LimiClip-${VERSION}.zip"
 DMG_PATH="$REPO_ROOT/build/LimiClip-${VERSION}.dmg"
 
-# ── Apple ID credentials (set as env vars before running) ────────────────────
+# ── Apple notarization credentials ───────────────────────────────────────────
+# Prefer a stored notarytool keychain profile (NOTARY_PROFILE) so the secret
+# never lives in env vars or CI logs; fall back to APPLE_ID + APPLE_APP_PASSWORD.
+NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 APPLE_ID="${APPLE_ID:-}"
 APPLE_APP_PASSWORD="${APPLE_APP_PASSWORD:-}"
 
-if [[ -z "$APPLE_ID" || -z "$APPLE_APP_PASSWORD" ]]; then
-    echo "❌  Set APPLE_ID and APPLE_APP_PASSWORD before running."
+if [[ -z "$NOTARY_PROFILE" && ( -z "$APPLE_ID" || -z "$APPLE_APP_PASSWORD" ) ]]; then
+    echo "❌  Provide notarization credentials, one of:"
     echo ""
+    echo "    # Option A — stored keychain profile (recommended):"
+    echo "    xcrun notarytool store-credentials \"limiclip-notary\" --apple-id you@example.com --team-id $TEAM_ID"
+    echo "    export NOTARY_PROFILE=limiclip-notary"
+    echo ""
+    echo "    # Option B — env vars:"
     echo "    export APPLE_ID=you@example.com"
     echo "    export APPLE_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx"
     echo ""
@@ -78,12 +86,19 @@ ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
 
 # ── 4. Notarize ────────────────────────────────────────────────────────────────
 echo "🔏  Submitting for notarization (this may take 1-5 minutes)…"
-xcrun notarytool submit "$ZIP_PATH" \
-    --apple-id "$APPLE_ID" \
-    --password "$APPLE_APP_PASSWORD" \
-    --team-id "$TEAM_ID" \
-    --wait \
-    --output-format json
+if [[ -n "$NOTARY_PROFILE" ]]; then
+    xcrun notarytool submit "$ZIP_PATH" \
+        --keychain-profile "$NOTARY_PROFILE" \
+        --wait \
+        --output-format json
+else
+    xcrun notarytool submit "$ZIP_PATH" \
+        --apple-id "$APPLE_ID" \
+        --password "$APPLE_APP_PASSWORD" \
+        --team-id "$TEAM_ID" \
+        --wait \
+        --output-format json
+fi
 
 echo "✓  Notarization accepted."
 

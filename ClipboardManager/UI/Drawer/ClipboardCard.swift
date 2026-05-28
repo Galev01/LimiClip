@@ -126,7 +126,7 @@ struct ClipboardCard: View {
         ZStack(alignment: .bottomTrailing) {
             if let path = item.blobPath,
                let blobStore,
-               let nsImage = NSImage(contentsOf: blobStore.absoluteURL(forRelativePath: path)) {
+               let nsImage = ImageCache.shared.image(forKey: path, url: blobStore.absoluteURL(forRelativePath: path)) {
                 Image(nsImage: nsImage)
                     .resizable()
                     .aspectRatio(contentMode: .fill)

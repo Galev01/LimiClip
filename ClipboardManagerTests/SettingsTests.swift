@@ -25,8 +25,8 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(Settings(defaults: defaults).appearance, .light)
     }
 
-    func testHistoryLimitDefaultIs5000() {
-        XCTAssertEqual(Settings(defaults: defaults).historyLimit, 5000)
+    func testHistoryLimitDefaultIs100() {
+        XCTAssertEqual(Settings(defaults: defaults).historyLimit, 100)
     }
 
     func testHistoryLimitRoundtrips() {

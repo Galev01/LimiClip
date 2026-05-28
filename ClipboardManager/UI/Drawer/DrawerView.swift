@@ -130,7 +130,7 @@ struct DrawerView: View {
     private var cardStrip: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
+                LazyHStack(spacing: 12) {
                     ForEach(Array(viewModel.filteredItems.enumerated()), id: \.element.id) { idx, item in
                         ClipboardCard(
                             item: item,

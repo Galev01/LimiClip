@@ -53,7 +53,7 @@ final class AppCoordinator {
             onCompactToggle: { compact.toggle(near: NSEvent.mouseLocation) }
         )
         self.monitor = PasteboardMonitor(store: store, blobStore: blobStore)
-        self.retention = RetentionJob(store: store)
+        self.retention = RetentionJob(store: store, blobStore: blobStore)
     }
 
     func start() {

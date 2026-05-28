@@ -57,6 +57,38 @@ final class BlobStore: @unchecked Sendable {
         try fm.removeItem(at: fullURL)
     }
 
+    /// Deletes every on-disk blob whose relative path is NOT in `referenced`,
+    /// returning the relative paths removed. Best-effort: a file that fails to
+    /// delete is skipped rather than aborting the whole sweep.
+    @discardableResult
+    func purgeOrphans(referenced: Set<String>) throws -> [String] {
+        // Resolve symlinks on both sides: enumerator URLs can come back
+        // symlink-resolved (e.g. /var -> /private/var on macOS) while `root`
+        // is not, which would break a naive prefix comparison.
+        let basePath = root.resolvingSymlinksInPath().path
+        let base = basePath.hasSuffix("/") ? basePath : basePath + "/"
+        guard let enumerator = fm.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        var removed: [String] = []
+        for case let url as URL in enumerator {
+            let isFile = (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile ?? false
+            guard isFile else { continue }
+            let filePath = url.resolvingSymlinksInPath().path
+            guard filePath.hasPrefix(base) else { continue }
+            let relativePath = String(filePath.dropFirst(base.count))
+            if referenced.contains(relativePath) { continue }
+            // Best-effort: skip files we can't delete rather than aborting.
+            if (try? fm.removeItem(at: url)) != nil {
+                removed.append(relativePath)
+            }
+        }
+        return removed
+    }
+
     /// Absolute file URL — used by SwiftUI's `Image(nsImage:)` via `NSImage(contentsOfFile:)`.
     func absoluteURL(forRelativePath relativePath: String) -> URL {
         root.appendingPathComponent(relativePath, isDirectory: false)

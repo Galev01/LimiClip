@@ -232,4 +232,87 @@ final class ClipboardStoreTests: XCTestCase {
         XCTAssertNoThrow(try store.clearAll())
         XCTAssertEqual(try store.countItems(), 0)
     }
+
+    // MARK: - Caps: photos (drop oldest beyond 5) and pins (evict oldest beyond 15)
+
+    func testRecordImageEvictsOldestPhotoBeyondLimit() throws {
+        let store = try makeStore()
+        // Record 6 distinct non-pinned photos; the cap is 5.
+        for i in 0..<6 {
+            _ = try store.recordImage(
+                contentHash: "hash-\(i)",
+                blobPath: "aa/bb/img-\(i).png",
+                dimensions: CGSize(width: 10, height: 10),
+                byteSize: 10, sourceApp: nil, sourceBundleId: nil
+            )
+        }
+        let images = try store.recentItems(limit: 100).filter { $0.kind == "image" }
+        XCTAssertEqual(images.count, 5, "non-pinned photos are capped at 5")
+        let paths = Set(images.compactMap(\.blobPath))
+        XCTAssertFalse(paths.contains("aa/bb/img-0.png"), "oldest photo should be evicted")
+        XCTAssertTrue(paths.contains("aa/bb/img-5.png"), "newest photo should be retained")
+    }
+
+    func testPinnedPhotosDoNotCountTowardImageCap() throws {
+        let store = try makeStore()
+        // Three pinned photos.
+        var pinnedIds: [Int64] = []
+        for i in 0..<3 {
+            let img = try store.recordImage(
+                contentHash: "p-\(i)", blobPath: "aa/bb/p-\(i).png",
+                dimensions: CGSize(width: 10, height: 10),
+                byteSize: 10, sourceApp: nil, sourceBundleId: nil
+            )
+            pinnedIds.append(try XCTUnwrap(img?.id))
+        }
+        for id in pinnedIds { try store.setPinned(itemId: id, pinned: true) }
+        // Six non-pinned photos on top.
+        for i in 0..<6 {
+            _ = try store.recordImage(
+                contentHash: "n-\(i)", blobPath: "aa/bb/n-\(i).png",
+                dimensions: CGSize(width: 10, height: 10),
+                byteSize: 10, sourceApp: nil, sourceBundleId: nil
+            )
+        }
+        let images = try store.recentItems(limit: 100).filter { $0.kind == "image" }
+        XCTAssertEqual(images.filter { $0.pinned }.count, 3, "pinned photos are not evicted by the cap")
+        XCTAssertEqual(images.filter { !$0.pinned }.count, 5, "non-pinned photos are capped at 5")
+    }
+
+    func testReferencedBlobPathsReturnsImageBlobsIncludingSoftDeleted() throws {
+        let store = try makeStore()
+        _ = try store.recordImage(
+            contentHash: "h1", blobPath: "aa/bb/one.png",
+            dimensions: CGSize(width: 1, height: 1), byteSize: 1,
+            sourceApp: nil, sourceBundleId: nil
+        )
+        let two = try store.recordImage(
+            contentHash: "h2", blobPath: "cc/dd/two.png",
+            dimensions: CGSize(width: 1, height: 1), byteSize: 1,
+            sourceApp: nil, sourceBundleId: nil
+        )
+        _ = try store.recordText("text only", sourceApp: nil, sourceBundleId: nil)
+        // A soft-deleted image still owns its blob (it could be restored).
+        try store.softDelete(itemId: try XCTUnwrap(two?.id))
+
+        XCTAssertEqual(try store.referencedBlobPaths(), ["aa/bb/one.png", "cc/dd/two.png"])
+    }
+
+    func testSetPinnedEvictsOldestPinBeyondLimit() throws {
+        let store = try makeStore()
+        var ids: [Int64] = []
+        for i in 0..<16 {
+            let it = try store.recordText("item-\(i)", sourceApp: nil, sourceBundleId: nil)
+            ids.append(try XCTUnwrap(it?.id))
+        }
+        // Pin all 16 in insertion order; the cap is 15.
+        for id in ids { try store.setPinned(itemId: id, pinned: true) }
+
+        let all = try store.recentItems(limit: 100)
+        XCTAssertEqual(all.filter { $0.pinned }.count, 15, "pinned items are capped at 15")
+        // The oldest pin is evicted (unpinned) but the row survives.
+        let oldest = try XCTUnwrap(all.first { $0.id == ids[0] })
+        XCTAssertFalse(oldest.pinned, "oldest pin should be unpinned, not deleted")
+        XCTAssertEqual(all.count, 16, "evicting a pin must not delete the row")
+    }
 }

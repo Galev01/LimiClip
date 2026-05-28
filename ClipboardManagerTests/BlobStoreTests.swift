@@ -53,4 +53,26 @@ final class BlobStoreTests: XCTestCase {
     func testReadMissingFileThrows() {
         XCTAssertThrowsError(try store.read(relativePath: "ff/ee/missing.png"))
     }
+
+    func testPurgeOrphansDeletesOnlyUnreferencedFiles() throws {
+        let keep = try store.write(data: Data([1, 2, 3]), fileExtension: "png")
+        let orphan = try store.write(data: Data([4, 5, 6]), fileExtension: "png")
+
+        let removed = try store.purgeOrphans(referenced: [keep])
+
+        XCTAssertEqual(removed, [orphan])
+        XCTAssertNoThrow(try store.read(relativePath: keep), "referenced file must survive")
+        XCTAssertThrowsError(try store.read(relativePath: orphan), "orphan must be deleted")
+    }
+
+    func testPurgeOrphansWithEmptyReferenceDeletesEverything() throws {
+        let a = try store.write(data: Data([1]), fileExtension: "png")
+        let b = try store.write(data: Data([2]), fileExtension: "png")
+
+        let removed = try store.purgeOrphans(referenced: [])
+
+        XCTAssertEqual(Set(removed), Set([a, b]))
+        XCTAssertThrowsError(try store.read(relativePath: a))
+        XCTAssertThrowsError(try store.read(relativePath: b))
+    }
 }

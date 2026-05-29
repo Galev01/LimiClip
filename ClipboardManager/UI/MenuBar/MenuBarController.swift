@@ -39,7 +39,7 @@ final class MenuBarController: NSObject {
     }
 
     private func makeImage(symbol: String) -> NSImage? {
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Clipboard Manager")
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "LimiClip")
         image?.isTemplate = true
         return image
     }
@@ -75,7 +75,7 @@ final class MenuBarController: NSObject {
 
         menu.addItem(.separator())
 
-        let quitItem = NSMenuItem(title: "Quit Clipboard Manager", action: #selector(quitClicked), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit LimiClip", action: #selector(quitClicked), keyEquivalent: "q")
         quitItem.keyEquivalentModifierMask = [.command]
         quitItem.target = self
         menu.addItem(quitItem)

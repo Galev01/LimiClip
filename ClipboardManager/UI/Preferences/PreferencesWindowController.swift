@@ -22,7 +22,7 @@ final class PreferencesWindowController {
             rootView: PreferencesView(exclusionsVM: exclusionsVM)
         )
         let newWindow = NSWindow(contentViewController: hosting)
-        newWindow.title = "Clipboard Manager — Preferences"
+        newWindow.title = "LimiClip — Preferences"
         newWindow.styleMask = [.titled, .closable, .miniaturizable]
         newWindow.setContentSize(NSSize(width: 600, height: 400))
         newWindow.minSize = NSSize(width: 560, height: 380)

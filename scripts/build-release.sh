@@ -22,7 +22,7 @@ fi
 
 ARCHIVE_PATH="$REPO_ROOT/build/LimiClip.xcarchive"
 EXPORT_PATH="$REPO_ROOT/build/LimiClip-export"
-APP_PATH="$EXPORT_PATH/ClipboardManager.app"
+APP_PATH="$EXPORT_PATH/LimiClip.app"
 ZIP_PATH="$REPO_ROOT/build/LimiClip-${VERSION}.zip"
 DMG_PATH="$REPO_ROOT/build/LimiClip-${VERSION}.dmg"
 
@@ -107,21 +107,41 @@ echo "📎  Stapling notarization ticket…"
 xcrun stapler staple "$APP_PATH"
 echo "✓  Stapled."
 
-# ── 6. Create DMG with Applications symlink ───────────────────────────────────
+# ── 6. Create the drag-to-Applications DMG ────────────────────────────────────
 echo "💿  Creating DMG: $DMG_PATH"
 DMG_STAGING="$REPO_ROOT/build/dmg-staging"
 rm -rf "$DMG_STAGING"
 mkdir "$DMG_STAGING"
 cp -R "$APP_PATH" "$DMG_STAGING/"
-ln -s /Applications "$DMG_STAGING/Applications"
-
 rm -f "$DMG_PATH"
-hdiutil create \
-    -volname "LimiClip ${VERSION}" \
-    -srcfolder "$DMG_STAGING" \
-    -ov \
-    -format UDZO \
-    "$DMG_PATH"
+
+# Preferred: a styled window with the app on the left and an Applications
+# drop-target on the right (the familiar "drag to install" layout). Falls back
+# to a plain DMG if create-dmg isn't available or its Finder styling fails
+# (e.g. a headless build with no Finder automation).
+if command -v create-dmg >/dev/null 2>&1 && \
+   create-dmg \
+       --volname "LimiClip ${VERSION}" \
+       --window-pos 200 120 \
+       --window-size 560 380 \
+       --icon-size 128 \
+       --icon "LimiClip.app" 150 200 \
+       --hide-extension "LimiClip.app" \
+       --app-drop-link 410 200 \
+       --no-internet-enable \
+       "$DMG_PATH" "$DMG_STAGING"; then
+    echo "✓  Styled drag-to-Applications DMG."
+else
+    echo "⚠️  create-dmg unavailable or failed — building a plain DMG instead."
+    rm -f "$DMG_PATH"
+    ln -s /Applications "$DMG_STAGING/Applications"
+    hdiutil create \
+        -volname "LimiClip ${VERSION}" \
+        -srcfolder "$DMG_STAGING" \
+        -ov \
+        -format UDZO \
+        "$DMG_PATH"
+fi
 
 rm -rf "$DMG_STAGING"
 

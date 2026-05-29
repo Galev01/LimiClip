@@ -279,7 +279,7 @@ final class ClipboardStoreTests: XCTestCase {
         XCTAssertEqual(images.filter { !$0.pinned }.count, 5, "non-pinned photos are capped at 5")
     }
 
-    func testReferencedBlobPathsReturnsImageBlobsIncludingSoftDeleted() throws {
+    func testReferencedBlobPathsDropsBlobOfEagerlyDeletedImage() throws {
         let store = try makeStore()
         _ = try store.recordImage(
             contentHash: "h1", blobPath: "aa/bb/one.png",
@@ -292,10 +292,11 @@ final class ClipboardStoreTests: XCTestCase {
             sourceApp: nil, sourceBundleId: nil
         )
         _ = try store.recordText("text only", sourceApp: nil, sourceBundleId: nil)
-        // A soft-deleted image still owns its blob (it could be restored).
+        // Deleting an item now eagerly drops its blob (no 24h grace / no undo),
+        // so its path is nulled and GC no longer counts it as referenced.
         try store.softDelete(itemId: try XCTUnwrap(two?.id))
 
-        XCTAssertEqual(try store.referencedBlobPaths(), ["aa/bb/one.png", "cc/dd/two.png"])
+        XCTAssertEqual(try store.referencedBlobPaths(), ["aa/bb/one.png"])
     }
 
     func testSetPinnedEvictsOldestPinBeyondLimit() throws {
@@ -314,5 +315,122 @@ final class ClipboardStoreTests: XCTestCase {
         let oldest = try XCTUnwrap(all.first { $0.id == ids[0] })
         XCTAssertFalse(oldest.pinned, "oldest pin should be unpinned, not deleted")
         XCTAssertEqual(all.count, 16, "evicting a pin must not delete the row")
+    }
+
+    // MARK: - Captured text size cap
+
+    func testRejectsTextLargerThanCap() throws {
+        let store = try makeStore()
+        let oversized = String(repeating: "a", count: ClipboardStore.maxTextBytes + 1)
+        let result = try store.recordText(oversized, sourceApp: nil, sourceBundleId: nil)
+        XCTAssertNil(result)
+        XCTAssertEqual(try store.countItems(), 0)
+    }
+
+    func testAcceptsTextAtExactlyTheCap() throws {
+        let store = try makeStore()
+        let atCap = String(repeating: "a", count: ClipboardStore.maxTextBytes)
+        let result = try store.recordText(atCap, sourceApp: nil, sourceBundleId: nil)
+        XCTAssertNotNil(result)
+        XCTAssertEqual(try store.countItems(), 1)
+        XCTAssertEqual(result?.byteSize, ClipboardStore.maxTextBytes)
+    }
+
+    func testCapIsMeasuredInUTF8BytesNotCharacters() throws {
+        let store = try makeStore()
+        // "\u{1F510}" is 4 UTF-8 bytes but 1 Character; pick a count so the
+        // character count stays under the cap while the byte count exceeds it.
+        let charCount = (ClipboardStore.maxTextBytes / 4) + 1
+        let emoji = String(repeating: "\u{1F510}", count: charCount)
+        XCTAssertLessThanOrEqual(emoji.count, ClipboardStore.maxTextBytes)
+        XCTAssertGreaterThan(emoji.utf8.count, ClipboardStore.maxTextBytes)
+        XCTAssertNil(try store.recordText(emoji, sourceApp: nil, sourceBundleId: nil))
+        XCTAssertEqual(try store.countItems(), 0)
+    }
+
+    func testNormalSizedTextStillCaptured() throws {
+        let store = try makeStore()
+        let result = try store.recordText("a perfectly normal clipboard string", sourceApp: nil, sourceBundleId: nil)
+        XCTAssertNotNil(result)
+        XCTAssertEqual(try store.recentItems(limit: 5).map(\.body), ["a perfectly normal clipboard string"])
+    }
+
+    // MARK: - Eager blob delete on single-item delete
+
+    private func makeBlobStore() throws -> (BlobStore, URL) {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("eager-\(UUID().uuidString)", isDirectory: true)
+        return (try BlobStore(rootDirectory: root), root)
+    }
+
+    func testSoftDeleteEagerlyDeletesImageBlob() throws {
+        let (blobStore, root) = try makeBlobStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try ClipboardStore(configuration: ClipboardStore.testingConfiguration(), blobStore: blobStore)
+
+        let path = try blobStore.write(data: Data([1, 2, 3]), fileExtension: "png")
+        let img = try store.recordImage(contentHash: "h1", blobPath: path,
+            dimensions: CGSize(width: 1, height: 1), byteSize: 3, sourceApp: nil, sourceBundleId: nil)
+        let id = try XCTUnwrap(img?.id)
+        XCTAssertNoThrow(try blobStore.read(relativePath: path), "precondition: blob exists")
+
+        try store.softDelete(itemId: id)
+
+        XCTAssertThrowsError(try blobStore.read(relativePath: path), "blob must be deleted eagerly on single-item delete")
+        XCTAssertEqual(try store.countItems(includingDeleted: true), 1)
+        XCTAssertFalse(try store.referencedBlobPaths().contains(path))
+    }
+
+    func testSoftDeleteKeepsBlobIfAnotherLiveRowReferencesIt() throws {
+        let (blobStore, root) = try makeBlobStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try ClipboardStore(configuration: ClipboardStore.testingConfiguration(), blobStore: blobStore)
+
+        let shared = try blobStore.write(data: Data([7, 7, 7]), fileExtension: "png")
+        let a = try store.recordImage(contentHash: "ha", blobPath: shared,
+            dimensions: CGSize(width: 1, height: 1), byteSize: 3, sourceApp: nil, sourceBundleId: nil)
+        _ = try store.recordImage(contentHash: "hb", blobPath: shared,
+            dimensions: CGSize(width: 1, height: 1), byteSize: 3, sourceApp: nil, sourceBundleId: nil)
+        let aId = try XCTUnwrap(a?.id)
+
+        try store.softDelete(itemId: aId)
+
+        XCTAssertNoThrow(try blobStore.read(relativePath: shared), "shared blob must survive while another live row references it")
+        XCTAssertTrue(try store.referencedBlobPaths().contains(shared))
+    }
+
+    func testSoftDeleteTextItemIgnoresBlobStore() throws {
+        let (blobStore, root) = try makeBlobStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try ClipboardStore(configuration: ClipboardStore.testingConfiguration(), blobStore: blobStore)
+
+        let txt = try store.recordText("secret note", sourceApp: nil, sourceBundleId: nil)
+        let id = try XCTUnwrap(txt?.id)
+
+        XCTAssertNoThrow(try store.softDelete(itemId: id))
+        XCTAssertEqual(try store.recentItems(limit: 10).count, 0)
+        XCTAssertEqual(try store.countItems(includingDeleted: true), 1)
+    }
+
+    func testSoftDeleteWithoutBlobStoreStillSoftDeletes() throws {
+        let store = try makeStore()  // no blobStore injected
+        let img = try store.recordImage(contentHash: "h", blobPath: "aa/bb/x.png",
+            dimensions: CGSize(width: 1, height: 1), byteSize: 1, sourceApp: nil, sourceBundleId: nil)
+        let id = try XCTUnwrap(img?.id)
+        XCTAssertNoThrow(try store.softDelete(itemId: id))
+        XCTAssertEqual(try store.recentItems(limit: 10).count, 0)
+        XCTAssertEqual(try store.countItems(includingDeleted: true), 1)
+    }
+
+    func testSoftDeleteMissingBlobDoesNotThrow() throws {
+        let (blobStore, root) = try makeBlobStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try ClipboardStore(configuration: ClipboardStore.testingConfiguration(), blobStore: blobStore)
+
+        let img = try store.recordImage(contentHash: "h", blobPath: "ff/ee/never.png",
+            dimensions: CGSize(width: 1, height: 1), byteSize: 1, sourceApp: nil, sourceBundleId: nil)
+        let id = try XCTUnwrap(img?.id)
+        XCTAssertNoThrow(try store.softDelete(itemId: id), "missing blob must not surface as an error")
+        XCTAssertEqual(try store.countItems(includingDeleted: true), 1)
     }
 }

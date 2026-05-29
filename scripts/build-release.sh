@@ -125,9 +125,30 @@ hdiutil create \
 
 rm -rf "$DMG_STAGING"
 
+# ── 7. Sign + notarize + staple the DMG container itself ──────────────────────
+# The app inside is already notarized+stapled; doing the DMG too means the
+# downloaded .dmg passes Gatekeeper cleanly on first mount, even offline.
+echo "🔏  Signing the DMG…"
+codesign --force --timestamp --sign "Developer ID Application" "$DMG_PATH"
+
+echo "🔏  Notarizing the DMG…"
+if [[ -n "$NOTARY_PROFILE" ]]; then
+    xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait --output-format json
+else
+    xcrun notarytool submit "$DMG_PATH" --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$TEAM_ID" --wait --output-format json
+fi
+
+echo "📎  Stapling the DMG…"
+xcrun stapler staple "$DMG_PATH"
+echo "✓  DMG signed, notarized, stapled."
+
 echo ""
 echo "✅  Done: $DMG_PATH"
 echo "    Distribute this file to other Macs."
 echo ""
-echo "    Verify with Gatekeeper:"
+echo "    Gatekeeper check (must say 'accepted / Notarized Developer ID'):"
 echo "    spctl -a -vvv \"$APP_PATH\""
+echo "    spctl -a -t open --context context:primary-signature -vvv \"$DMG_PATH\""
+echo ""
+echo "    Publish this SHA-256 in the release notes:"
+shasum -a 256 "$DMG_PATH"

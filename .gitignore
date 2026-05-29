@@ -13,7 +13,9 @@ xcuserdata/
 
 # SPM
 .swiftpm/
-Package.resolved
+# Note: a pinned Package.resolved is committed at the repo root for reproducible,
+# reviewable dependency versions. The copy inside the generated .xcodeproj is
+# still ignored (via the ClipboardManager.xcodeproj/ rule below).
 
 # Logs
 *.log

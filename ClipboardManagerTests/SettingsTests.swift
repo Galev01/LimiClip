@@ -67,4 +67,32 @@ final class SettingsTests: XCTestCase {
         s.compactMode = false
         XCTAssertFalse(Settings(defaults: defaults).compactMode)
     }
+
+    func testStrictCaptureModeDefaultIsFalse() {
+        XCTAssertFalse(Settings(defaults: defaults).strictCaptureMode)
+    }
+
+    func testStrictCaptureModeRoundtrips() {
+        let s = Settings(defaults: defaults)
+        s.strictCaptureMode = true
+        XCTAssertTrue(Settings(defaults: defaults).strictCaptureMode)
+        s.strictCaptureMode = false
+        XCTAssertFalse(Settings(defaults: defaults).strictCaptureMode)
+    }
+
+    func testSaveScreenshotsDefaultIsFalse() {
+        XCTAssertFalse(Settings(defaults: defaults).saveScreenshots)
+    }
+
+    func testSaveScreenshotsRoundtrips() {
+        let s = Settings(defaults: defaults)
+        s.saveScreenshots = true
+        XCTAssertTrue(Settings(defaults: defaults).saveScreenshots)
+        s.saveScreenshots = false
+        XCTAssertFalse(Settings(defaults: defaults).saveScreenshots)
+    }
+
+    func testSaveScreenshotsKeyIsStable() {
+        XCTAssertEqual(Settings.Key.saveScreenshots, "saveScreenshots")
+    }
 }

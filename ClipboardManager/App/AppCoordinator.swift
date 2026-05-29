@@ -20,15 +20,15 @@ final class AppCoordinator {
     private var lastAppearance: AppAppearance?
 
     init() throws {
-        let store = try ClipboardStore()
+        let blobStore = try BlobStore()
+        self.blobStore = blobStore
+
+        let store = try ClipboardStore(blobStore: blobStore)
         try store.seedDefaultExclusionsIfNeeded()
         self.store = store
         let exclusionsVM = ExclusionsViewModel(store: store)
         self.exclusionsVM = exclusionsVM
         self.preferencesWindow = PreferencesWindowController(exclusionsVM: exclusionsVM)
-
-        let blobStore = try BlobStore()
-        self.blobStore = blobStore
 
         let injector = PasteInjector(blobStore: blobStore)
         self.pasteInjector = injector
@@ -42,17 +42,22 @@ final class AppCoordinator {
         let compact = CompactPopupWindowController(viewModel: viewModel, blobStore: blobStore, store: store, injector: injector)
         self.compactPopup = compact
 
+        let monitor = PasteboardMonitor(store: store, blobStore: blobStore)
+        self.monitor = monitor
+
         let prefs = self.preferencesWindow
         self.menuBar = MenuBarController(
             onOpenClipboard: { drawer.toggle() },
-            onOpenPreferences: { prefs.show() }
+            onOpenPreferences: { prefs.show() },
+            onPause: { choice in monitor.pause(until: choice.pausedUntil(from: Date())) },
+            onResume: { monitor.pause(until: PauseState.resumeDate) },
+            isPaused: { monitor.isPaused }
         )
         self.hotkey = HotkeyService(
             onToggle: { drawer.toggle() },
-            onScreenshot: { AppCoordinator.captureScreenshotToClipboard() },
+            onScreenshot: { AppCoordinator.captureScreenshotToClipboard(monitor: monitor) },
             onCompactToggle: { compact.toggle(near: NSEvent.mouseLocation) }
         )
-        self.monitor = PasteboardMonitor(store: store, blobStore: blobStore)
         self.retention = RetentionJob(store: store, blobStore: blobStore)
     }
 
@@ -83,16 +88,31 @@ final class AppCoordinator {
         lastAppearance = appearance
     }
 
-    /// Spawns `screencapture -i -c` so the user can drag-select a region;
-    /// the resulting image lands on NSPasteboard and the monitor picks it up.
-    static func captureScreenshotToClipboard() {
+    /// Spawns `screencapture -i -c` so the user can drag-select a region; the
+    /// resulting image lands on NSPasteboard. When the "Save screenshots to
+    /// history" setting is OFF (the default), capture is paused across the
+    /// screencapture lifecycle so the image reaches the clipboard for pasting
+    /// but is NOT recorded into history.
+    static func captureScreenshotToClipboard(monitor: PasteboardMonitor, settings: Settings = Settings()) {
+        let save = settings.saveScreenshots
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
         task.arguments = ["-i", "-c"]
+        if !save {
+            monitor.pause(until: .distantFuture)
+            task.terminationHandler = { _ in
+                // Keep paused briefly so the monitor's poll consumes (and
+                // skips) the screenshot's changeCount, then resume.
+                Task { @MainActor in
+                    monitor.pause(until: Date().addingTimeInterval(PasteboardMonitor.pollInterval * 2))
+                }
+            }
+        }
         do {
             try task.run()
-            Log.coordinator.info("screencapture -i -c launched")
+            Log.coordinator.info("screencapture -i -c launched (save=\(save, privacy: .public))")
         } catch {
+            if !save { monitor.pause(until: PauseState.resumeDate) }
             Log.coordinator.error("screencapture launch failed: \(error.localizedDescription, privacy: .public)")
         }
     }

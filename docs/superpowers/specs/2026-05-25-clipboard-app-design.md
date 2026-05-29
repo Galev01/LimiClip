@@ -26,7 +26,14 @@ A premium, beautiful clipboard manager for macOS. Native SwiftUI + AppKit, menu-
 12. Empty state
 13. Retention policy: defaults to 5,000 items / 90 days (user-configurable), auto-cleanup hourly. History Limit dropdown options: 500 / 1,000 / 5,000 / 10,000 / Unlimited. Retention options: 7 / 30 / 90 days / Forever.
 14. Privacy: skip items with `org.nspasteboard.ConcealedType`, user-managed app exclusion list, "pause monitoring" quick action
-15. Storage encrypted at rest via SQLCipher with key in Keychain
+15. Storage encrypted at rest via app-level AES-256-GCM (CryptoKit) with key in Keychain
+
+> **Implementation note (v0.4.0):** encryption at rest is implemented at the
+> application layer with CryptoKit AES-256-GCM (sensitive columns + image blobs),
+> not SQLCipher. GRDB has no official SQLCipher-over-SPM support, so the canonical
+> `groue/GRDB.swift` dependency is used and the data is encrypted by `FieldCipher`
+> before it reaches SQLite. The dedup hash is a keyed HMAC-SHA256. Mentions of
+> "SQLCipher" / `clipboard.sqlcipher` below are historical design intent.
 
 **Out of scope (deferred):**
 
@@ -55,7 +62,7 @@ ClipboardApp (NSApplication, .accessory policy — menu bar only)
 │     ├── PermissionsService     — Accessibility status + prompts
 │     └── RetentionJob           — hourly cleanup loop
 │
-├── ClipboardStore (GRDB + SQLCipher)
+├── ClipboardStore (GRDB; app-level AES-GCM field/blob encryption via FieldCipher)
 │     ├── items table   (id, kind, subtype, hash, body, blob_path,
 │     │                  source_app, source_bundle_id, created_at,
 │     │                  pinned, snippet_id, deleted_at)
@@ -89,11 +96,10 @@ ClipboardApp (NSApplication, .accessory policy — menu bar only)
 
 **External dependencies:**
 
-- `GRDB.swift` (5.x or later) — SQLite wrapper
-- `SQLCipher` — encryption at rest (linked via GRDB's `GRDB-SQLCipher` variant)
+- `GRDB.swift` (7.x, pinned) — SQLite wrapper (canonical `groue/GRDB.swift`, no SQLCipher)
 - `KeyboardShortcuts` (Sindre Sorhus) — global hotkey UX and customization
-- `Sparkle` — auto-update framework (wired but opt-in)
-- Everything else: system frameworks (AppKit, SwiftUI, Carbon for low-level hotkey, Security for Keychain, CryptoKit for hashing)
+- Everything else: system frameworks (AppKit, SwiftUI, Carbon for low-level hotkey, Security for Keychain, CryptoKit for AES-GCM encryption + HMAC dedup hashing)
+- _(No `SQLCipher` dependency: at-rest encryption is app-level CryptoKit. No `Sparkle` yet: updates are manual via GitHub Releases.)_
 
 ## 4. Data model
 
@@ -151,7 +157,7 @@ Single-row key/value table for user preferences (theme, hotkey, retention, pause
 
 ```
 ~/Library/Application Support/Clipboard Manager/
-  ├── clipboard.sqlcipher          (encrypted GRDB database)
+  ├── clipboard.sqlite             (SQLite; sensitive columns AES-GCM encrypted)
   └── blobs/
         ├── 0f/1a/<uuid>.heic      (sharded by first 4 chars of uuid)
         └── ...

@@ -5,9 +5,20 @@ import UniformTypeIdentifiers
 
 struct PrivacyPane: View {
     @ObservedObject var viewModel: ExclusionsViewModel
+    @AppStorage(Settings.Key.strictCaptureMode) private var strictCaptureMode: Bool = false
 
     var body: some View {
         Form {
+            Section {
+                Toggle(isOn: $strictCaptureMode) {
+                    Text("Only record copies from identifiable apps")
+                }
+            } footer: {
+                Text("When on, a copy is skipped if its source app can't be identified — exclusions fail closed. May skip some copies from background or system processes.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
             Section {
                 if viewModel.exclusions.isEmpty {
                     Text("No apps excluded. Clipboard history records copies from all apps.")

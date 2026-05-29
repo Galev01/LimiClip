@@ -105,4 +105,70 @@ final class BlobStoreTests: XCTestCase {
         XCTAssertEqual(try encStore.read(relativePath: relPath), png,
                        "legacy plaintext blobs must still read correctly after encryption ships")
     }
+
+    // MARK: - Path-traversal confinement
+
+    func testReadRejectsParentTraversal() throws {
+        // Plant a secret file OUTSIDE the store root, a sibling of tempRoot.
+        let secretURL = tempRoot.deletingLastPathComponent()
+            .appendingPathComponent("secret-\(UUID().uuidString).txt")
+        try Data("top secret".utf8).write(to: secretURL)
+        defer { try? FileManager.default.removeItem(at: secretURL) }
+
+        let escape = "../" + secretURL.lastPathComponent
+        XCTAssertThrowsError(try store.read(relativePath: escape)) { error in
+            XCTAssertEqual(error as? BlobStore.Failure, .pathEscapesRoot(escape))
+        }
+    }
+
+    func testReadRejectsAbsolutePath() throws {
+        let absolute = "/etc/hosts"
+        XCTAssertThrowsError(try store.read(relativePath: absolute)) { error in
+            XCTAssertEqual(error as? BlobStore.Failure, .pathEscapesRoot(absolute))
+        }
+    }
+
+    func testDeleteRejectsParentTraversal() throws {
+        let victimURL = tempRoot.deletingLastPathComponent()
+            .appendingPathComponent("victim-\(UUID().uuidString).txt")
+        try Data("do not delete".utf8).write(to: victimURL)
+        defer { try? FileManager.default.removeItem(at: victimURL) }
+
+        let escape = "../" + victimURL.lastPathComponent
+        XCTAssertThrowsError(try store.delete(relativePath: escape)) { error in
+            XCTAssertEqual(error as? BlobStore.Failure, .pathEscapesRoot(escape))
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: victimURL.path),
+                      "file outside root must not be deleted")
+    }
+
+    func testAbsoluteURLRejectsParentTraversal() throws {
+        let escape = "../../etc/passwd"
+        XCTAssertThrowsError(try store.absoluteURL(forRelativePath: escape)) { error in
+            XCTAssertEqual(error as? BlobStore.Failure, .pathEscapesRoot(escape))
+        }
+    }
+
+    func testAbsoluteURLAllowsValidShardedPath() throws {
+        let relPath = try store.write(data: Data([1, 2, 3]), fileExtension: "png")
+        let url = try store.absoluteURL(forRelativePath: relPath)
+        let base = tempRoot.resolvingSymlinksInPath().path
+        XCTAssertTrue(url.resolvingSymlinksInPath().path.hasPrefix(base),
+                      "valid blob URL must stay under root")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testReadRejectsEmptyPath() {
+        XCTAssertThrowsError(try store.read(relativePath: "")) { error in
+            XCTAssertEqual(error as? BlobStore.Failure, .pathEscapesRoot(""))
+        }
+    }
+
+    func testValidRoundtripStillWorksAfterGuard() throws {
+        let data = Data("normal blob".utf8)
+        let relPath = try store.write(data: data, fileExtension: "png")
+        XCTAssertEqual(try store.read(relativePath: relPath), data)
+        try store.delete(relativePath: relPath)
+        XCTAssertThrowsError(try store.read(relativePath: relPath))
+    }
 }

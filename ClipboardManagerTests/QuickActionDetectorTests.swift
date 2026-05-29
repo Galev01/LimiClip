@@ -112,4 +112,32 @@ final class QuickActionDetectorTests: XCTestCase {
     func testURLStringProducesNoActions() {
         XCTAssertEqual(QuickActionDetector.detect(in: "https://example.com"), [])
     }
+
+    // MARK: - mailto sanitization
+
+    func testSanitizerRejectsControlChars() {
+        XCTAssertNil(QuickActionDetector.sanitizedEmailAddress("a@b.com\nBcc:x"))
+        XCTAssertNil(QuickActionDetector.sanitizedEmailAddress("a@b.com%0aBcc:x"))
+        XCTAssertNil(QuickActionDetector.sanitizedEmailAddress("a@b.com;x"))
+        XCTAssertEqual(QuickActionDetector.sanitizedEmailAddress("user@example.com"), "user@example.com")
+        XCTAssertEqual(QuickActionDetector.sanitizedEmailAddress("aaaaaaaaaaaaaaaaaaaa@b.com?cc=x"), "aaaaaaaaaaaaaaaaaaaa@b.com")
+    }
+
+    func testSanitizerAllowsPlusAddressingAndSubdomains() {
+        XCTAssertEqual(QuickActionDetector.sanitizedEmailAddress("user+tag@example.com"), "user+tag@example.com")
+        XCTAssertEqual(QuickActionDetector.sanitizedEmailAddress("a@mail.corp.example.com"), "a@mail.corp.example.com")
+        XCTAssertNil(QuickActionDetector.sanitizedEmailAddress("user@localhost"), "dot-less domain rejected")
+    }
+
+    /// Regression guard: a crafted "email" carrying injected mailto params must
+    /// never surface as a composeEmail action with the params intact.
+    func testComposeEmailActionNeverCarriesInjectedParams() {
+        let actions = QuickActionDetector.detect(in: "victim@example.com?bcc=attacker@evil.com")
+        for action in actions {
+            if case .composeEmail(let address) = action {
+                XCTAssertFalse(address.contains("?"), "address must not carry a query string")
+                XCTAssertFalse(address.contains("bcc"), "address must not carry injected bcc")
+            }
+        }
+    }
 }

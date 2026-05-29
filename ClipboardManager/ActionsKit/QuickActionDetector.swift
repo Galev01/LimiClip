@@ -71,19 +71,34 @@ enum QuickActionDetector {
         let coverage = Double(match.range.length) / Double(nsText.length)
         guard coverage >= 0.5 else { return nil }
 
-        if let url = match.url {
-            let absoluteString = url.absoluteString
-            if absoluteString.hasPrefix("mailto:") {
-                let address = String(absoluteString.dropFirst("mailto:".count))
-                return address.isEmpty ? nsText.substring(with: match.range) : address
-            }
-            if let host = url.host {
-                let user = url.user ?? ""
-                return user.isEmpty ? nsText.substring(with: match.range) : "\(user)@\(host)"
-            }
+        let rawCandidate: String
+        if let abs = match.url?.absoluteString, abs.hasPrefix("mailto:") {
+            rawCandidate = String(abs.dropFirst("mailto:".count))
+        } else {
+            rawCandidate = nsText.substring(with: match.range)
         }
-        return nsText.substring(with: match.range)
-            .replacingOccurrences(of: "mailto:", with: "")
+        let cleaned = rawCandidate.isEmpty ? nsText.substring(with: match.range) : rawCandidate
+        return sanitizedEmailAddress(cleaned)
+    }
+
+    /// Reduces a detected candidate to a safe bare email address, or nil if it
+    /// can't be. Strips any mailto query (`?cc=…`) and rejects header/param
+    /// injection characters and malformed addresses, so the address can be
+    /// handed to a `mailto:` URL without smuggling cc/bcc/subject/body.
+    internal static func sanitizedEmailAddress(_ candidate: String) -> String? {
+        // Drop any query string — the cc/bcc/subject/body injection vector.
+        let base = String(candidate.prefix(while: { $0 != "?" }))
+        // Reject param separators and any whitespace / control characters.
+        let forbidden = CharacterSet(charactersIn: "?&;%").union(.whitespacesAndNewlines)
+        guard base.rangeOfCharacter(from: forbidden) == nil else { return nil }
+        // Require local@domain shape with a dotted, non-edge-dotted domain.
+        let parts = base.split(separator: "@", omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return nil }
+        let local = parts[0], domain = parts[1]
+        guard !local.isEmpty,
+              domain.contains("."), !domain.hasPrefix("."), !domain.hasSuffix(".")
+        else { return nil }
+        return base
     }
 
     // MARK: - Hex color detection

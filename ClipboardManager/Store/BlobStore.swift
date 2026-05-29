@@ -32,6 +32,27 @@ final class BlobStore: @unchecked Sendable {
         try fm.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
     }
 
+    enum Failure: Error, Equatable { case pathEscapesRoot(String) }
+
+    /// Confines `relativePath` to `root`, throwing if it tries to escape (via
+    /// `..`, an absolute path, or a symlink that resolves outside root). Shared
+    /// by every path-taking method so the whole store is traversal-safe.
+    private func resolve(relativePath: String) throws -> URL {
+        guard !relativePath.isEmpty,
+              !relativePath.hasPrefix("/"),
+              !(relativePath as NSString).pathComponents.contains("..")
+        else { throw Failure.pathEscapesRoot(relativePath) }
+
+        let candidate = root.appendingPathComponent(relativePath, isDirectory: false)
+        let basePath = root.resolvingSymlinksInPath().path
+        let base = basePath.hasSuffix("/") ? basePath : basePath + "/"
+        let resolved = candidate.resolvingSymlinksInPath().path
+        guard resolved.hasPrefix(base) || resolved == String(base.dropLast()) else {
+            throw Failure.pathEscapesRoot(relativePath)
+        }
+        return candidate
+    }
+
     /// Writes data to a freshly-generated sharded path. Returns the relative
     /// path under `root` (e.g. "ab/cd/uuid.png").
     @discardableResult
@@ -43,22 +64,21 @@ final class BlobStore: @unchecked Sendable {
         let filename = "\(uuid).\(fileExtension)"
         let relPath = "\(relDir)/\(filename)"
 
-        let fullDir = root.appendingPathComponent(relDir, isDirectory: true)
-        try fm.createDirectory(at: fullDir, withIntermediateDirectories: true)
-        let fullURL = fullDir.appendingPathComponent(filename, isDirectory: false)
+        let fullURL = try resolve(relativePath: relPath)
+        try fm.createDirectory(at: fullURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         let payload = try cipher.map { try $0.seal(data) } ?? data
         try payload.write(to: fullURL, options: [.atomic])
         return relPath
     }
 
     func read(relativePath: String) throws -> Data {
-        let fullURL = root.appendingPathComponent(relativePath, isDirectory: false)
+        let fullURL = try resolve(relativePath: relativePath)
         let raw = try Data(contentsOf: fullURL)
         return cipher.map { $0.open(raw) } ?? raw
     }
 
     func delete(relativePath: String) throws {
-        let fullURL = root.appendingPathComponent(relativePath, isDirectory: false)
+        let fullURL = try resolve(relativePath: relativePath)
         try fm.removeItem(at: fullURL)
     }
 
@@ -95,8 +115,9 @@ final class BlobStore: @unchecked Sendable {
     }
 
     /// Absolute file URL — used by SwiftUI's `Image(nsImage:)` via `NSImage(contentsOfFile:)`.
-    func absoluteURL(forRelativePath relativePath: String) -> URL {
-        root.appendingPathComponent(relativePath, isDirectory: false)
+    /// Throws if the path tries to escape `root`.
+    func absoluteURL(forRelativePath relativePath: String) throws -> URL {
+        try resolve(relativePath: relativePath)
     }
 }
 

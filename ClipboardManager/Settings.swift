@@ -42,6 +42,8 @@ struct Settings: @unchecked Sendable {
         static let showHoverPreview = "showHoverPreview"
         static let launchAtLogin = "launchAtLogin"   // tracked-only; service mgmt is source of truth
         static let compactMode = "compactMode"
+        static let strictCaptureMode = "strictCaptureMode"
+        static let saveScreenshots = "saveScreenshots"
     }
 
     let defaults: UserDefaults
@@ -88,6 +90,26 @@ struct Settings: @unchecked Sendable {
             return defaults.bool(forKey: Key.compactMode)
         }
         nonmutating set { defaults.set(newValue, forKey: Key.compactMode) }
+    }
+
+    /// When on, clipboard changes whose source app can't be identified (nil
+    /// bundle id) are NOT captured — exclusions fail closed. Default off.
+    var strictCaptureMode: Bool {
+        get {
+            if defaults.object(forKey: Key.strictCaptureMode) == nil { return false }
+            return defaults.bool(forKey: Key.strictCaptureMode)
+        }
+        nonmutating set { defaults.set(newValue, forKey: Key.strictCaptureMode) }
+    }
+
+    /// When on, ⌘⇧A screenshots are saved into clipboard history. Default off,
+    /// so screenshots reach the clipboard for pasting but aren't persisted.
+    var saveScreenshots: Bool {
+        get {
+            if defaults.object(forKey: Key.saveScreenshots) == nil { return false }
+            return defaults.bool(forKey: Key.saveScreenshots)
+        }
+        nonmutating set { defaults.set(newValue, forKey: Key.saveScreenshots) }
     }
 }
 

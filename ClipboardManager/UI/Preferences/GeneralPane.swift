@@ -7,6 +7,7 @@ struct GeneralPane: View {
     @AppStorage(Settings.Key.retentionDays) private var retentionDays: Int = 90
     @AppStorage(Settings.Key.showHoverPreview) private var showHoverPreview: Bool = true
     @AppStorage(Settings.Key.compactMode) private var compactMode: Bool = false
+    @AppStorage(Settings.Key.saveScreenshots) private var saveScreenshots: Bool = false
 
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
 
@@ -56,6 +57,18 @@ struct GeneralPane: View {
                 Toggle(isOn: $compactMode) {
                     Text("Compact Mode")
                 }
+            }
+
+            Section {
+                Toggle(isOn: $saveScreenshots) {
+                    Text("Save screenshots to history")
+                }
+            } header: {
+                Text("Screenshots")
+            } footer: {
+                Text("When off, ⌘⇧A screenshots are copied to the clipboard for pasting but not saved into history.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

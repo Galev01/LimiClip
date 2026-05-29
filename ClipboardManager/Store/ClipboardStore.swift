@@ -17,6 +17,7 @@ final class ClipboardStore: @unchecked Sendable {
 
     private let queue: any DatabaseWriter
     private let cipher: FieldCipher
+    private let blobStore: BlobStore?
 
     /// Hard caps enforced on write, independent of the user's history-size
     /// setting. Pins are exempt from retention purges, so they're bounded
@@ -24,6 +25,12 @@ final class ClipboardStore: @unchecked Sendable {
     /// handful of image thumbnails.
     static let maxPinnedItems = 15
     static let maxImages = 5
+
+    /// Upper bound on a single captured text item, measured in UTF-8 bytes.
+    /// Oversized pastes are dropped (not truncated) to avoid the memory/disk
+    /// cost of hashing + encrypting + storing a multi-MB string, and because
+    /// truncation would silently corrupt the user's content.
+    static let maxTextBytes = 2 * 1024 * 1024
 
     // MARK: - Initialisation
 
@@ -38,24 +45,34 @@ final class ClipboardStore: @unchecked Sendable {
         try self.init(path: url.path, cipher: cipher)
     }
 
+    /// Production init wiring the blob store so a single-item delete can eagerly
+    /// remove the backing blob file (instead of waiting for GC/retention).
+    convenience init(blobStore: BlobStore) throws {
+        let cipher = FieldCipher(masterKeyData: try DatabaseKey.loadOrCreate())
+        let url = try Self.databaseURL()
+        try self.init(path: url.path, cipher: cipher, blobStore: blobStore)
+    }
+
     /// Opens (and migrates) the database file at `path` with the given cipher.
-    convenience init(path: String, cipher: FieldCipher) throws {
+    convenience init(path: String, cipher: FieldCipher, blobStore: BlobStore? = nil) throws {
         let queue = try DatabaseQueue(path: path, configuration: Self.makeConfiguration())
-        try self.init(queue: queue, cipher: cipher)
+        try self.init(queue: queue, cipher: cipher, blobStore: blobStore)
     }
 
     /// Init from a prepared configuration (used by tests with an in-memory DB).
     convenience init(
         configuration: Configuration,
-        cipher: FieldCipher = FieldCipher(masterKeyData: Data(repeating: 7, count: 32))
+        cipher: FieldCipher = FieldCipher(masterKeyData: Data(repeating: 7, count: 32)),
+        blobStore: BlobStore? = nil
     ) throws {
         let queue = try DatabaseQueue(configuration: configuration)
-        try self.init(queue: queue, cipher: cipher)
+        try self.init(queue: queue, cipher: cipher, blobStore: blobStore)
     }
 
-    private init(queue: any DatabaseWriter, cipher: FieldCipher) throws {
+    private init(queue: any DatabaseWriter, cipher: FieldCipher, blobStore: BlobStore? = nil) throws {
         self.queue = queue
         self.cipher = cipher
+        self.blobStore = blobStore
         var migrator = DatabaseMigrator()
         Migrations.register(&migrator)
         try migrator.migrate(queue)
@@ -174,6 +191,10 @@ final class ClipboardStore: @unchecked Sendable {
     func recordText(_ raw: String, sourceApp: String?, sourceBundleId: String?) throws -> Item? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return nil }
+        if raw.utf8.count > Self.maxTextBytes {
+            Log.app.info("dropping oversized clipboard text: \(raw.utf8.count, privacy: .public) bytes > cap \(Self.maxTextBytes, privacy: .public)")
+            return nil
+        }
         if let bundleId = sourceBundleId, try isExcluded(bundleId: bundleId) {
             Log.app.info("skipping copy from excluded bundle: \(bundleId, privacy: .public)")
             return nil
@@ -368,11 +389,29 @@ final class ClipboardStore: @unchecked Sendable {
 
     // MARK: - Soft delete
 
+    /// Soft-deletes an item and, if it owns an image blob that no other live row
+    /// references, eagerly deletes that blob file (instead of waiting for GC /
+    /// retention). The row's `blobPath` is nulled so blob GC no longer counts it.
     func softDelete(itemId: Int64) throws {
         let now = Int64(Date().timeIntervalSince1970)
-        _ = try queue.write { db in
+        let blobToDelete: String? = try queue.write { db -> String? in
+            let row = try Item.filter(Item.Columns.id == itemId).fetchOne(db)
             try Item.filter(Item.Columns.id == itemId)
                 .updateAll(db, [Item.Columns.deletedAt.set(to: now)])
+            guard let path = row?.blobPath else { return nil }
+            let stillReferenced = try Item
+                .filter(Item.Columns.blobPath == path
+                        && Item.Columns.deletedAt == nil
+                        && Item.Columns.id != itemId)
+                .fetchCount(db) > 0
+            if stillReferenced { return nil }
+            try Item.filter(Item.Columns.id == itemId)
+                .updateAll(db, [Item.Columns.blobPath.set(to: nil)])
+            return path
+        }
+        if let blobToDelete {
+            do { try blobStore?.delete(relativePath: blobToDelete) }
+            catch { Log.app.error("eager blob delete failed: \(error.localizedDescription, privacy: .public)") }
         }
         postChange()
     }

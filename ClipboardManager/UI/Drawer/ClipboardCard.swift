@@ -98,7 +98,12 @@ struct ClipboardCard: View {
             }
         case .composeEmail(let address):
             Button("Compose Email") {
-                if let url = URL(string: "mailto:\(address)") {
+                // Build via URLComponents so the address can't smuggle mailto
+                // query params (cc/bcc/subject/body) into the opened URL.
+                var comps = URLComponents()
+                comps.scheme = "mailto"
+                comps.path = address
+                if let url = comps.url {
                     NSWorkspace.shared.open(url)
                 }
             }

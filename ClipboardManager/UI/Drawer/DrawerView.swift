@@ -143,11 +143,13 @@ struct DrawerView: View {
                             onPin: { onPin?($0, $1) }
                         )
                             .id(item.id ?? -1)
-                            .onTapGesture(count: 2) {
-                                onPaste?(item, false)
-                            }
                             .onTapGesture {
+                                // Selecting a card pastes it immediately
+                                // (writes to the pasteboard and synthesises
+                                // ⌘V into the previously-active app) rather
+                                // than merely focusing it.
                                 viewModel.jumpTo(index: idx)
+                                onPaste?(item, false)
                             }
                             .onHover { hovering in
                                 guard showHoverPreview else { return }

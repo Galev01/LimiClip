@@ -32,7 +32,15 @@ final class PasteInjector {
         case "image":
             guard let path = item.blobPath else { return }
             let data = try blobStore.read(relativePath: path)
-            pasteboard.setData(data, forType: .png)
+            // Write an NSImage object rather than just raw PNG bytes: this
+            // registers the standard representations (TIFF + PNG) that most
+            // apps look for. Setting only `.png` leaves TIFF-only consumers
+            // (Preview, Pages, Mail, clipboard inspectors) seeing nothing.
+            if let image = NSImage(data: data) {
+                pasteboard.writeObjects([image])
+            } else {
+                pasteboard.setData(data, forType: .png)
+            }
         case "file":
             let ref = try FileReference.decodingJSON(item.body)
             let url = URL(fileURLWithPath: ref.path)

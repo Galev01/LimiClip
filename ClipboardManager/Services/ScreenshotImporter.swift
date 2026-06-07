@@ -54,6 +54,88 @@ final class ScreenshotImporter {
         )
     }
 
+    private var query: NSMetadataQuery?
+    private var seenPaths: Set<String> = []
+    private var hasGathered = false
+
+    func start() {
+        guard query == nil else { return }
+        guard settings().captureScreenshotFiles else {
+            Log.app.info("screenshot import disabled by setting")
+            return
+        }
+        let folder = Self.resolveScreenshotFolder(
+            location: CFPreferencesCopyAppValue("location" as CFString,
+                                                "com.apple.screencapture" as CFString) as? String
+        )
+        let q = NSMetadataQuery()
+        q.predicate = NSPredicate(format: "kMDItemIsScreenCapture == 1")
+        q.searchScopes = [folder]
+        q.operationQueue = .main
+
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(gatheringFinished(_:)),
+            name: .NSMetadataQueryDidFinishGathering, object: q)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(queryUpdated(_:)),
+            name: .NSMetadataQueryDidUpdate, object: q)
+
+        q.start()
+        query = q
+        Log.app.info("screenshot import watching \(folder.path, privacy: .public)")
+    }
+
+    func stop() {
+        guard let q = query else { return }
+        q.stop()
+        NotificationCenter.default.removeObserver(self, name: .NSMetadataQueryDidFinishGathering, object: q)
+        NotificationCenter.default.removeObserver(self, name: .NSMetadataQueryDidUpdate, object: q)
+        query = nil
+        hasGathered = false
+        seenPaths.removeAll()
+    }
+
+    /// Initial gather = screenshots that already exist at launch. Record them
+    /// as "seen" so we never back-fill the user's old Desktop screenshots.
+    @objc nonisolated private func gatheringFinished(_ note: Notification) {
+        MainActor.assumeIsolated { self.handleGatheringFinished() }
+    }
+
+    @MainActor private func handleGatheringFinished() {
+        guard let q = query else { return }
+        q.disableUpdates()
+        for i in 0..<q.resultCount {
+            if let item = q.result(at: i) as? NSMetadataItem,
+               let path = item.value(forAttribute: NSMetadataItemPathKey) as? String {
+                seenPaths.insert(path)
+            }
+        }
+        hasGathered = true
+        q.enableUpdates()
+    }
+
+    /// A new (or changed) screenshot appeared. Import any path not seen yet.
+    @objc nonisolated private func queryUpdated(_ note: Notification) {
+        MainActor.assumeIsolated { self.handleUpdate() }
+    }
+
+    @MainActor private func handleUpdate() {
+        guard hasGathered, let q = query else { return }
+        q.disableUpdates()
+        defer { q.enableUpdates() }
+        for i in 0..<q.resultCount {
+            guard let item = q.result(at: i) as? NSMetadataItem,
+                  let path = item.value(forAttribute: NSMetadataItemPathKey) as? String,
+                  !seenPaths.contains(path) else { continue }
+            seenPaths.insert(path)
+            do {
+                _ = try importFile(at: URL(fileURLWithPath: path))
+            } catch {
+                Log.app.error("screenshot import failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
     /// Resolves the folder macOS writes screenshots to. `location` is the raw
     /// value of `com.apple.screencapture`'s `location` default (may be nil,
     /// a tilde path, or an absolute path). Falls back to ~/Desktop.

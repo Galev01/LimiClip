@@ -6,9 +6,20 @@ import UniformTypeIdentifiers
 struct PrivacyPane: View {
     @ObservedObject var viewModel: ExclusionsViewModel
     @AppStorage(Settings.Key.strictCaptureMode) private var strictCaptureMode: Bool = false
+    @AppStorage(Settings.Key.captureScreenshotFiles) private var captureScreenshotFiles: Bool = true
 
     var body: some View {
         Form {
+            Section {
+                Toggle(isOn: $captureScreenshotFiles) {
+                    Text("Capture screenshots saved to disk")
+                }
+            } footer: {
+                Text("When on, screenshots macOS saves as files (⌘⇧4) are added to your history. Only items macOS tags as screenshots are imported — other files in the folder are ignored.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
             Section {
                 Toggle(isOn: $strictCaptureMode) {
                     Text("Only record copies from identifiable apps")

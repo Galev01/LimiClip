@@ -15,6 +15,7 @@ final class AppCoordinator {
     private let pasteInjector: PasteInjector
     private let exclusionsVM: ExclusionsViewModel
     private let preferencesWindow: PreferencesWindowController
+    private let screenshotImporter: ScreenshotImporter
 
     nonisolated(unsafe) private var appearanceObserver: NSObjectProtocol?
     private var lastAppearance: AppAppearance?
@@ -59,6 +60,7 @@ final class AppCoordinator {
             onCompactToggle: { compact.toggle(near: NSEvent.mouseLocation) }
         )
         self.retention = RetentionJob(store: store, blobStore: blobStore)
+        self.screenshotImporter = ScreenshotImporter(store: store, blobStore: blobStore)
     }
 
     func start() {
@@ -66,18 +68,30 @@ final class AppCoordinator {
         Log.coordinator.info("coordinator starting")
         hotkey.start()
         monitor.start()
+        screenshotImporter.start()
         retention.start()
 
         // Re-apply appearance if the user changes it in Preferences.
         appearanceObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
                                                                      object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.applyAppearance() }
+            Task { @MainActor in
+                self?.applyAppearance()
+                self?.applyScreenshotCaptureSetting()
+            }
         }
     }
 
     deinit {
         if let token = appearanceObserver {
             NotificationCenter.default.removeObserver(token)
+        }
+    }
+
+    private func applyScreenshotCaptureSetting() {
+        if Settings().captureScreenshotFiles {
+            screenshotImporter.start()   // no-op if already running
+        } else {
+            screenshotImporter.stop()
         }
     }
 

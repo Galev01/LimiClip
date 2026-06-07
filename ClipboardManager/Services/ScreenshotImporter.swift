@@ -97,8 +97,16 @@ final class ScreenshotImporter {
 
     /// Initial gather = screenshots that already exist at launch. Record them
     /// as "seen" so we never back-fill the user's old Desktop screenshots.
+    ///
+    /// Soundness: operationQueue=.main guarantees delivery on the main thread.
+    /// The Thread.isMainThread guard below is a defensive fallback in case that
+    /// ever changes (e.g. if the query is reconfigured).
     @objc nonisolated private func gatheringFinished(_ note: Notification) {
-        MainActor.assumeIsolated { self.handleGatheringFinished() }
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { self.handleGatheringFinished() }
+        } else {
+            Task { @MainActor in self.handleGatheringFinished() }
+        }
     }
 
     @MainActor private func handleGatheringFinished() {
@@ -115,8 +123,16 @@ final class ScreenshotImporter {
     }
 
     /// A new (or changed) screenshot appeared. Import any path not seen yet.
+    ///
+    /// Soundness: operationQueue=.main guarantees delivery on the main thread.
+    /// The Thread.isMainThread guard below is a defensive fallback in case that
+    /// ever changes (e.g. if the query is reconfigured).
     @objc nonisolated private func queryUpdated(_ note: Notification) {
-        MainActor.assumeIsolated { self.handleUpdate() }
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { self.handleUpdate() }
+        } else {
+            Task { @MainActor in self.handleUpdate() }
+        }
     }
 
     @MainActor private func handleUpdate() {
@@ -127,11 +143,17 @@ final class ScreenshotImporter {
             guard let item = q.result(at: i) as? NSMetadataItem,
                   let path = item.value(forAttribute: NSMetadataItemPathKey) as? String,
                   !seenPaths.contains(path) else { continue }
-            seenPaths.insert(path)
+            // Insert into seenPaths only after a successful import so that a
+            // transient partial-write read (importFile returns nil) is retried
+            // on the next NSMetadataQueryDidUpdate notification.
             do {
-                _ = try importFile(at: URL(fileURLWithPath: path))
+                if let _ = try importFile(at: URL(fileURLWithPath: path)) {
+                    seenPaths.insert(path)
+                }
+                // nil return means unreadable/non-image; leave path unseen for retry
             } catch {
                 Log.app.error("screenshot import failed: \(error.localizedDescription, privacy: .public)")
+                // Do not mark seen on error — allow retry on next update
             }
         }
     }

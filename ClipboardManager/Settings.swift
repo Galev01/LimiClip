@@ -44,6 +44,7 @@ struct Settings: @unchecked Sendable {
         static let compactMode = "compactMode"
         static let strictCaptureMode = "strictCaptureMode"
         static let saveScreenshots = "saveScreenshots"
+        static let captureScreenshotFiles = "captureScreenshotFiles"
     }
 
     let defaults: UserDefaults
@@ -110,6 +111,18 @@ struct Settings: @unchecked Sendable {
             return defaults.bool(forKey: Key.saveScreenshots)
         }
         nonmutating set { defaults.set(newValue, forKey: Key.saveScreenshots) }
+    }
+
+    /// When on, macOS screenshots saved as files to the screenshot folder
+    /// (⌘⇧4, default behaviour) are imported into clipboard history. Default
+    /// on. Independent of `saveScreenshots`, which governs the in-app ⌘⇧A
+    /// clipboard screenshot.
+    var captureScreenshotFiles: Bool {
+        get {
+            if defaults.object(forKey: Key.captureScreenshotFiles) == nil { return true }
+            return defaults.bool(forKey: Key.captureScreenshotFiles)
+        }
+        nonmutating set { defaults.set(newValue, forKey: Key.captureScreenshotFiles) }
     }
 }
 

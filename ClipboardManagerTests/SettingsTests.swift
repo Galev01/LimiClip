@@ -95,4 +95,17 @@ final class SettingsTests: XCTestCase {
     func testSaveScreenshotsKeyIsStable() {
         XCTAssertEqual(Settings.Key.saveScreenshots, "saveScreenshots")
     }
+
+    func test_captureScreenshotFiles_defaultsOn() {
+        let defaults = UserDefaults(suiteName: "test-\(UUID().uuidString)")!
+        let settings = Settings(defaults: defaults)
+        XCTAssertTrue(settings.captureScreenshotFiles)
+    }
+
+    func test_captureScreenshotFiles_roundTrips() {
+        let defaults = UserDefaults(suiteName: "test-\(UUID().uuidString)")!
+        let settings = Settings(defaults: defaults)
+        settings.captureScreenshotFiles = false
+        XCTAssertFalse(settings.captureScreenshotFiles)
+    }
 }

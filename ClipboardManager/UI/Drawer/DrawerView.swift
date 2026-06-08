@@ -22,6 +22,11 @@ struct DrawerView: View {
     /// timer below.
     @State private var refreshTick: Int = 0
 
+    /// Single shared 1 Hz publisher. Stored once so SwiftUI subscribes exactly
+    /// one timer for this view's lifetime (a fresh `Timer.publish(...)` inside
+    /// `.onReceive` would be re-created on every body evaluation).
+    private let refreshTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
+
     @AppStorage(Settings.Key.showHoverPreview) private var showHoverPreview: Bool = true
 
     @State private var searchExpanded: Bool = false
@@ -85,7 +90,7 @@ struct DrawerView: View {
         )
         .environment(\.blobStore, blobStore)
         .ignoresSafeArea()
-        .onReceive(Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()) { _ in
+        .onReceive(refreshTimer) { _ in
             refreshTick &+= 1
         }
         .overlay(alignment: .top) {

@@ -3,16 +3,19 @@ import AppKit
 
 /// Decoded-image cache keyed by a blob's immutable relative path.
 ///
-/// The drawer re-evaluates card bodies frequently (on every clipboard change
-/// and once per second via the live-refresh timer). Decoding the on-disk
-/// thumbnail with `NSImage(contentsOf:)` inside `body` every time is the main
-/// source of UI jank, so we decode each blob once and serve every subsequent
-/// render from this cache.
+/// `NSCache` is internally thread-safe (its accessors are documented as safe to
+/// call from any thread without external locking), which is why `@unchecked
+/// Sendable` is sound here. We cap the entry count so decoded thumbnails can
+/// never grow without bound, independent of the on-disk image cap.
 final class ImageCache: @unchecked Sendable {
 
     static let shared = ImageCache()
 
-    private let cache = NSCache<NSString, NSImage>()
+    private let cache: NSCache<NSString, NSImage> = {
+        let c = NSCache<NSString, NSImage>()
+        c.countLimit = 256   // far above the UI's visibleLimit; bounds worst case
+        return c
+    }()
 
     init() {}
 

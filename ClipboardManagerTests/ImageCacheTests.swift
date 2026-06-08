@@ -60,4 +60,20 @@ final class ImageCacheTests: XCTestCase {
         let cache = ImageCache()
         XCTAssertNil(cache.image(forKey: "missing", blobStore: blobStore, path: "ff/ee/missing.png"))
     }
+
+    func testCacheReturnsSameInstanceOnHit() throws {
+        let blobs = try BlobStore(rootDirectory: URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("imgcache-\(UUID().uuidString)", isDirectory: true))
+        let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 2, pixelsHigh: 2,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+            isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        let png = rep.representation(using: .png, properties: [:])!
+        let path = try blobs.write(data: png, fileExtension: "png")
+        let cache = ImageCache()
+        let a = cache.image(forKey: "k", blobStore: blobs, path: path)
+        let b = cache.image(forKey: "k", blobStore: blobs, path: path)
+        XCTAssertNotNil(a)
+        XCTAssertTrue(a === b, "second call must be a cache hit (same instance)")
+    }
 }

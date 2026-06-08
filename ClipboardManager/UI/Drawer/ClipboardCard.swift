@@ -247,15 +247,18 @@ struct ClipboardCard: View {
 
 #Preview("File") {
     let ref = FileReference(path: "/U/x/Q2 Report.pdf", name: "Q2 Report.pdf", byteSize: 2_457_600, modifiedAt: 1)
-    let body = try! ref.encodedJSON()
-    let preview = Item(
-        id: 2, kind: "file", subtype: nil, contentHash: "h",
-        body: body, blobPath: nil, dimensions: nil, byteSize: Int(ref.byteSize),
-        sourceApp: "Finder", sourceBundleId: nil,
-        createdAt: Int64(Date().timeIntervalSince1970) - 30,
-        pinned: false, snippetId: nil, deletedAt: nil
-    )
-    return ClipboardCard(item: preview)
-        .padding()
-        .preferredColorScheme(.dark)
+    if let body = try? ref.encodedJSON() {
+        let preview = Item(
+            id: 2, kind: "file", subtype: nil, contentHash: "h",
+            body: body, blobPath: nil, dimensions: nil, byteSize: Int(ref.byteSize),
+            sourceApp: "Finder", sourceBundleId: nil,
+            createdAt: Int64(Date().timeIntervalSince1970) - 30,
+            pinned: false, snippetId: nil, deletedAt: nil
+        )
+        ClipboardCard(item: preview)
+            .padding()
+            .preferredColorScheme(.dark)
+    } else {
+        Text("Preview unavailable")
+    }
 }

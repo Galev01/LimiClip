@@ -112,10 +112,13 @@ struct PrivacyPane: View {
 }
 
 #Preview {
-    let store = try! ClipboardStore(configuration: ClipboardStore.testingConfiguration())
-    try! store.addExclusion(bundleId: "com.agilebits.onepassword7", name: "1Password 7")
-    try! store.addExclusion(bundleId: "com.bitwarden.desktop", name: "Bitwarden")
-    let vm = ExclusionsViewModel(store: store)
-    return PrivacyPane(viewModel: vm)
-        .frame(width: 400, height: 400)
+    if let store = try? ClipboardStore(configuration: ClipboardStore.testingConfiguration()) {
+        let _ = try? store.addExclusion(bundleId: "com.agilebits.onepassword7", name: "1Password 7")
+        let _ = try? store.addExclusion(bundleId: "com.bitwarden.desktop", name: "Bitwarden")
+        let vm = ExclusionsViewModel(store: store)
+        PrivacyPane(viewModel: vm)
+            .frame(width: 400, height: 400)
+    } else {
+        Text("Preview unavailable")
+    }
 }

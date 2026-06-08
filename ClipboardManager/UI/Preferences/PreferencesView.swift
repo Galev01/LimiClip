@@ -55,8 +55,11 @@ struct PreferencesView: View {
 }
 
 #Preview {
-    let store = try! ClipboardStore(configuration: ClipboardStore.testingConfiguration())
-    let vm = ExclusionsViewModel(store: store)
-    return PreferencesView(exclusionsVM: vm)
-        .frame(width: 600, height: 400)
+    if let store = try? ClipboardStore(configuration: ClipboardStore.testingConfiguration()) {
+        let vm = ExclusionsViewModel(store: store)
+        PreferencesView(exclusionsVM: vm)
+            .frame(width: 600, height: 400)
+    } else {
+        Text("Preview unavailable")
+    }
 }

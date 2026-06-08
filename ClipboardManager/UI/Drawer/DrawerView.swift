@@ -238,9 +238,12 @@ struct DrawerView: View {
 }
 
 #Preview {
-    let store = try! ClipboardStore(configuration: ClipboardStore.testingConfiguration())
-    let vm = ClipboardViewModel(store: store)
-    return DrawerView(viewModel: vm, blobStore: nil)
-        .frame(width: 1440, height: 300)
-        .preferredColorScheme(.dark)
+    if let store = try? ClipboardStore(configuration: ClipboardStore.testingConfiguration()) {
+        let vm = ClipboardViewModel(store: store)
+        DrawerView(viewModel: vm, blobStore: nil)
+            .frame(width: 1440, height: 300)
+            .preferredColorScheme(.dark)
+    } else {
+        Text("Preview unavailable")
+    }
 }

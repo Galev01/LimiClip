@@ -59,9 +59,12 @@ struct CompactPopupView: View {
 }
 
 #Preview {
-    let store = try! ClipboardStore(configuration: ClipboardStore.testingConfiguration())
-    let vm = ClipboardViewModel(store: store)
-    return CompactPopupView(viewModel: vm, onPaste: { _ in }, blobStore: nil)
-        .frame(width: 300, height: 300)
-        .preferredColorScheme(.dark)
+    if let store = try? ClipboardStore(configuration: ClipboardStore.testingConfiguration()) {
+        let vm = ClipboardViewModel(store: store)
+        CompactPopupView(viewModel: vm, onPaste: { _ in }, blobStore: nil)
+            .frame(width: 300, height: 300)
+            .preferredColorScheme(.dark)
+    } else {
+        Text("Preview unavailable")
+    }
 }

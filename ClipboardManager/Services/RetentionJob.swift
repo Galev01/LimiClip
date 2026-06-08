@@ -10,6 +10,9 @@ final class RetentionJob {
 
     private var timer: Timer?
 
+    /// Test hook: whether the hourly timer is currently scheduled.
+    var hasActiveTimer: Bool { timer != nil }
+
     /// `settings` is a closure so tests can inject a custom UserDefaults.
     /// `blobStore` is optional so tests that don't exercise blob GC can omit it.
     init(store: ClipboardStore, blobStore: BlobStore? = nil, settings: @escaping () -> Settings = { Settings() }) {
@@ -19,6 +22,7 @@ final class RetentionJob {
     }
 
     func start() {
+        guard timer == nil else { return }   // no-op if already running
         do { try runOnce() } catch { Log.app.error("retention initial pass: \(error.localizedDescription, privacy: .public)") }
 
         let t = Timer(timeInterval: 3600, repeats: true) { [weak self] _ in

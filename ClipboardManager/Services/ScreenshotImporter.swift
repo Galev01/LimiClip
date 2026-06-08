@@ -54,7 +54,7 @@ final class ScreenshotImporter {
         )
     }
 
-    private var query: NSMetadataQuery?
+    nonisolated(unsafe) private var query: NSMetadataQuery?
     private var seenPaths: Set<String> = []
     private var hasGathered = false
 
@@ -93,6 +93,18 @@ final class ScreenshotImporter {
         query = nil
         hasGathered = false
         seenPaths.removeAll()
+    }
+
+    deinit {
+        // May be torn down off the main actor. The query + observers were
+        // created on the main actor; stop them directly here. `query` is only
+        // mutated on the main actor (start/stop), and this read happens after
+        // the last such use, so there is no concurrent access.
+        if let q = query {
+            q.stop()
+            NotificationCenter.default.removeObserver(self, name: .NSMetadataQueryDidFinishGathering, object: q)
+            NotificationCenter.default.removeObserver(self, name: .NSMetadataQueryDidUpdate, object: q)
+        }
     }
 
     /// Initial gather = screenshots that already exist at launch. Record them

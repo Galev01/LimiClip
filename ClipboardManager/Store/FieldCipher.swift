@@ -49,9 +49,9 @@ struct FieldCipher: Sendable {
         return Self.stringPrefix + combined.base64EncodedString()
     }
 
-    /// Inverse of `seal`. Returns unprefixed (legacy plaintext) input verbatim,
-    /// and falls back to the original string if anything fails to decrypt — so a
-    /// read can never crash or lose data.
+    /// Inverse of `seal`. Returns unprefixed (legacy plaintext) input verbatim.
+    /// If the sealed prefix is present but decryption fails (wrong key,
+    /// corruption, or tampering), returns empty string — never the ciphertext.
     func open(_ stored: String) -> String {
         guard stored.hasPrefix(Self.stringPrefix) else { return stored }
         let b64 = String(stored.dropFirst(Self.stringPrefix.count))
@@ -59,7 +59,12 @@ struct FieldCipher: Sendable {
               let box = try? AES.GCM.SealedBox(combined: data),
               let opened = try? AES.GCM.open(box, using: stringKey),
               let text = String(data: opened, encoding: .utf8)
-        else { return stored }
+        else {
+            // Sealed prefix present but decryption failed: corruption, wrong
+            // key, or tampering. Never return the ciphertext to the UI.
+            Log.app.warning("FieldCipher: sealed string failed to open; returning empty")
+            return ""
+        }
         return text
     }
 
@@ -80,7 +85,10 @@ struct FieldCipher: Sendable {
         let body = Data(data.dropFirst(Self.blobMagic.count))
         guard let box = try? AES.GCM.SealedBox(combined: body),
               let opened = try? AES.GCM.open(box, using: blobKey)
-        else { return data }
+        else {
+            Log.app.warning("FieldCipher: sealed blob failed to open; returning empty")
+            return Data()
+        }
         return opened
     }
 

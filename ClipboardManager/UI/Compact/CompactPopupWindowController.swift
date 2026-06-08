@@ -8,7 +8,7 @@ final class CompactPopupWindowController {
     private let injector: PasteInjector
     private let store: ClipboardStore
     private(set) var isVisible: Bool = false
-    private var clickOutsideMonitor: Any?
+    nonisolated(unsafe) private var clickOutsideMonitor: Any?
 
     init(viewModel: ClipboardViewModel, blobStore: BlobStore?, store: ClipboardStore, injector: PasteInjector) {
         self.viewModel = viewModel
@@ -30,6 +30,12 @@ final class CompactPopupWindowController {
         self.window.onDismiss = { [weak self] in self?.hide() }
     }
 
+    deinit {
+        if let monitor = clickOutsideMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+    }
+
     func toggle(near cursor: NSPoint) {
         isVisible ? hide() : show(near: cursor)
     }
@@ -37,9 +43,12 @@ final class CompactPopupWindowController {
     func show(near cursor: NSPoint) {
         guard !isVisible else { return }
         let itemCount = min(10, viewModel.items.count)
-        let screen = NSScreen.screens.first(where: { $0.frame.contains(cursor) })
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(cursor) })
                      ?? NSScreen.main
-                     ?? NSScreen.screens[0]
+                     ?? NSScreen.screens.first else {
+            Log.drawer.error("compact popup: no screen available")
+            return
+        }
         let frame = CompactPopupGeometry.frame(near: cursor, itemCount: itemCount, in: screen.visibleFrame)
 
         window.setFrame(frame, display: false)

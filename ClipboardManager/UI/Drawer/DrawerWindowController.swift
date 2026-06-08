@@ -5,7 +5,7 @@ import AppKit
 final class DrawerWindowController {
     private let window: DrawerWindow
     private(set) var isVisible: Bool = false
-    private var clickOutsideMonitor: Any?
+    nonisolated(unsafe) private var clickOutsideMonitor: Any?
     private let injector: PasteInjector
     private let store: ClipboardStore
 
@@ -45,6 +45,13 @@ final class DrawerWindowController {
         revealHandler = { [weak self] item in self?.handleReveal(item: item) }
         pinHandler = { [weak self] item, pinned in self?.handlePin(item: item, pinned: pinned) }
         clearAllHandler = { [weak self] in self?.handleClearAll() }
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+        if let monitor = clickOutsideMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
     }
 
     @objc private func handleDismissRequest() { hide() }

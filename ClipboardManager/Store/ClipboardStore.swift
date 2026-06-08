@@ -121,8 +121,9 @@ final class ClipboardStore: @unchecked Sendable {
                         sql: "UPDATE items SET body = ?, sourceApp = ?, sourceBundleId = ?, contentHash = ? WHERE id = ?",
                         arguments: [sealedBody, sealedApp, sealedBundle, cipher.dedupHash(body), id])
                 case "file":
-                    let path = (try? FileReference.decodingJSON(body))?.path ?? body
-                    if path == body { Log.app.info("file row \(id, privacy: .public): JSON parse fallback, using body as path") }
+                    let decodedPath = (try? FileReference.decodingJSON(body))?.path
+                    if decodedPath == nil { Log.app.info("file row \(id, privacy: .public): JSON parse failed, using body as path") }
+                    let path = decodedPath ?? body
                     try db.execute(
                         sql: "UPDATE items SET body = ?, sourceApp = ?, sourceBundleId = ?, contentHash = ? WHERE id = ?",
                         arguments: [sealedBody, sealedApp, sealedBundle, cipher.dedupHash(path), id])

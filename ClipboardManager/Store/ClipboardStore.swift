@@ -26,6 +26,9 @@ final class ClipboardStore: @unchecked Sendable {
     static let maxPinnedItems = 15
     static let maxImages = 5
 
+    /// Drop image captures whose source bytes exceed this, mirroring maxTextBytes.
+    static let maxImageBytes = 10 * 1024 * 1024   // 10 MB
+
     /// Upper bound on a single captured text item, measured in UTF-8 bytes.
     /// Oversized pastes are dropped (not truncated) to avoid the memory/disk
     /// cost of hashing + encrypting + storing a multi-MB string, and because
@@ -119,6 +122,7 @@ final class ClipboardStore: @unchecked Sendable {
                         arguments: [sealedBody, sealedApp, sealedBundle, cipher.dedupHash(body), id])
                 case "file":
                     let path = (try? FileReference.decodingJSON(body))?.path ?? body
+                    if path == body { Log.app.info("file row \(id, privacy: .public): JSON parse fallback, using body as path") }
                     try db.execute(
                         sql: "UPDATE items SET body = ?, sourceApp = ?, sourceBundleId = ?, contentHash = ? WHERE id = ?",
                         arguments: [sealedBody, sealedApp, sealedBundle, cipher.dedupHash(path), id])
@@ -255,6 +259,10 @@ final class ClipboardStore: @unchecked Sendable {
         sourceApp: String?,
         sourceBundleId: String?
     ) throws -> Item? {
+        guard byteSize <= Self.maxImageBytes else {
+            Log.app.info("dropping oversize image (\(byteSize, privacy: .public) bytes)")
+            return nil
+        }
         if let bundleId = sourceBundleId, try isExcluded(bundleId: bundleId) {
             Log.app.info("skipping image from excluded bundle: \(bundleId, privacy: .public)")
             return nil

@@ -355,6 +355,20 @@ final class ClipboardStoreTests: XCTestCase {
         XCTAssertEqual(try store.recentItems(limit: 5).map(\.body), ["a perfectly normal clipboard string"])
     }
 
+    func testRecordImageRejectsOversizeBytes() throws {
+        let store = try ClipboardStore(configuration: ClipboardStore.testingConfiguration())
+        let huge = ClipboardStore.maxImageBytes + 1
+        let item = try store.recordImage(
+            contentHash: "oversize",
+            blobPath: "aa/bb/x.png",
+            dimensions: CGSize(width: 1, height: 1),
+            byteSize: huge,
+            sourceApp: nil,
+            sourceBundleId: nil
+        )
+        XCTAssertNil(item, "oversize image must be dropped")
+    }
+
     // MARK: - Eager blob delete on single-item delete
 
     private func makeBlobStore() throws -> (BlobStore, URL) {

@@ -31,14 +31,23 @@ final class PasteInjector {
             pasteboard.setString(item.body, forType: .string)
         case "image":
             guard let path = item.blobPath else { return }
-            let data = try blobStore.read(relativePath: path)
-            // Write an NSImage object rather than just raw PNG bytes: this
-            // registers the standard representations (TIFF + PNG) that most
-            // apps look for. Setting only `.png` leaves TIFF-only consumers
-            // (Preview, Pages, Mail, clipboard inspectors) seeing nothing.
-            if let image = NSImage(data: data) {
-                pasteboard.writeObjects([image])
+            // If the blob can't be read (missing/corrupt file), degrade
+            // gracefully: log and leave the pasteboard cleared rather than
+            // throwing and breaking the paste flow (bug B3).
+            guard let data = try? blobStore.read(relativePath: path) else {
+                Log.app.error("paste: image blob unreadable at \(path, privacy: .public)")
+                return
+            }
+            // Declare both PNG and TIFF explicitly. `writeObjects([NSImage])`
+            // alone registers TIFF but NOT PNG, so PNG-only consumers (and
+            // clipboard inspectors) see nothing. Declaring both covers every
+            // consumer.
+            if let image = NSImage(data: data), let tiff = image.tiffRepresentation {
+                pasteboard.declareTypes([.png, .tiff], owner: nil)
+                pasteboard.setData(data, forType: .png)
+                pasteboard.setData(tiff, forType: .tiff)
             } else {
+                pasteboard.declareTypes([.png], owner: nil)
                 pasteboard.setData(data, forType: .png)
             }
         case "file":

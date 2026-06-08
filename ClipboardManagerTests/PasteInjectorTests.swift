@@ -65,6 +65,42 @@ final class PasteInjectorTests: XCTestCase {
         XCTAssertNotNil(pasteboard.data(forType: .png))
     }
 
+    func testWritesImageRegistersBothPNGAndTIFF() throws {
+        let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 4, pixelsHigh: 4,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+            isPlanar: false, colorSpaceName: .deviceRGB,
+            bytesPerRow: 0, bitsPerPixel: 0
+        )!
+        let png = rep.representation(using: .png, properties: [:])!
+        let relPath = try blobs.write(data: png, fileExtension: "png")
+        let image = Item(
+            id: 9, kind: "image", subtype: nil, contentHash: "h",
+            body: relPath, blobPath: relPath, dimensions: "4x4", byteSize: png.count,
+            sourceApp: nil, sourceBundleId: nil,
+            createdAt: Int64(Date().timeIntervalSince1970),
+            pinned: false, snippetId: nil, deletedAt: nil
+        )
+        let injector = PasteInjector(pasteboard: pasteboard, blobStore: blobs)
+        try injector.writeToPasteboard(item: image)
+        XCTAssertNotNil(pasteboard.data(forType: .png), "PNG must be present")
+        XCTAssertNotNil(pasteboard.data(forType: .tiff), "TIFF must be present")
+    }
+
+    func testImagePasteWithMissingBlobDoesNotThrow() throws {
+        let image = Item(
+            id: 10, kind: "image", subtype: nil, contentHash: "h",
+            body: "zz/zz/does-not-exist.png", blobPath: "zz/zz/does-not-exist.png",
+            dimensions: "4x4", byteSize: 0,
+            sourceApp: nil, sourceBundleId: nil,
+            createdAt: Int64(Date().timeIntervalSince1970),
+            pinned: false, snippetId: nil, deletedAt: nil
+        )
+        let injector = PasteInjector(pasteboard: pasteboard, blobStore: blobs)
+        XCTAssertNoThrow(try injector.writeToPasteboard(item: image))
+        XCTAssertNil(pasteboard.data(forType: .png))
+    }
+
     func testWritesFileURL() throws {
         let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("paste-injector-\(UUID().uuidString).txt")

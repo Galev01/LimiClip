@@ -15,7 +15,7 @@ final class PasteboardMonitor {
 
     private let pasteboard: NSPasteboard
     private let store: ClipboardStore
-    private let blobStore: BlobStore
+    private let blobStore: BlobStore?
     private let frontmostApp: FrontmostAppProvider
     private let settings: () -> Settings
 
@@ -42,11 +42,14 @@ final class PasteboardMonitor {
         if let blobStore {
             self.blobStore = blobStore
         } else {
-            // Fall back to a temp directory if no blob store is injected.
-            // Production code MUST inject the shared production BlobStore.
-            self.blobStore = (try? BlobStore(rootDirectory: URL(fileURLWithPath: NSTemporaryDirectory())
-                .appendingPathComponent("clipboard-monitor-\(UUID().uuidString)", isDirectory: true)))
-                ?? (try! BlobStore(rootDirectory: URL(fileURLWithPath: NSTemporaryDirectory())))
+            // Best-effort temp fallback; if even this fails (disk full / perms),
+            // run without blob capture rather than crashing. Production always
+            // injects the shared BlobStore.
+            self.blobStore = try? BlobStore(rootDirectory: URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("clipboard-monitor-\(UUID().uuidString)", isDirectory: true))
+            if self.blobStore == nil {
+                Log.app.error("PasteboardMonitor: no blob store available; image capture disabled")
+            }
         }
         self.frontmostApp = frontmostApp
         self.settings = settings
@@ -146,6 +149,10 @@ final class PasteboardMonitor {
     }
 
     private func captureImage(data: Data, appName: String?, bundleId: String?) {
+        guard let blobStore else {
+            Log.app.error("image capture skipped: no blob store")
+            return
+        }
         do {
             let processed = try ImageProcessor.process(data: data)
             let blobPath = try blobStore.write(data: processed.thumbnailData, fileExtension: "png")

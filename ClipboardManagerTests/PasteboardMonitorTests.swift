@@ -132,6 +132,70 @@ final class PasteboardMonitorTests: XCTestCase {
         XCTAssertNotNil(items.first?.blobPath)
     }
 
+    func testCapturesLargeTiffImage() async throws {
+        // Copies from Preview/Finder/native apps arrive as UNCOMPRESSED TIFF —
+        // a modest Retina screenshot is 15-60 MB of raw bytes. The stored blob
+        // is the ≤800px thumbnail, so raw size must not be the disk gate.
+        let blobs = try BlobStore(rootDirectory: URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("monitor-tests-\(UUID().uuidString)", isDirectory: true))
+        monitor = PasteboardMonitor(
+            pasteboard: pasteboard,
+            store: store,
+            blobStore: blobs,
+            frontmostApp: { (nil, nil) }
+        )
+        monitor.tickForTesting()
+
+        // 2200x1400 RGBA ≈ 12.3 MB uncompressed — over the old 10 MB raw cap.
+        let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 2200, pixelsHigh: 1400,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+            isPlanar: false, colorSpaceName: .deviceRGB,
+            bytesPerRow: 0, bitsPerPixel: 0
+        )!
+        let tiffData = rep.tiffRepresentation!
+        XCTAssertGreaterThan(tiffData.count, 10 * 1024 * 1024, "test premise: TIFF must exceed 10 MB")
+
+        pasteboard.clearContents()
+        pasteboard.setData(tiffData, forType: .tiff)
+        monitor.tickForTesting()
+
+        let items = try store.recentItems(limit: 5)
+        XCTAssertEqual(items.count, 1, "a normal Retina-sized TIFF copy must be captured")
+        XCTAssertEqual(items.first?.kind, "image")
+        XCTAssertEqual(items.first?.dimensions, "2200x1400")
+    }
+
+    func testExcludedImageLeavesNoOrphanBlob() async throws {
+        let blobRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("monitor-tests-\(UUID().uuidString)", isDirectory: true)
+        let blobs = try BlobStore(rootDirectory: blobRoot)
+        try store.addExclusion(bundleId: "com.evil.copier", name: "Evil")
+        monitor = PasteboardMonitor(
+            pasteboard: pasteboard,
+            store: store,
+            blobStore: blobs,
+            frontmostApp: { ("Evil", "com.evil.copier") }
+        )
+        monitor.tickForTesting()
+
+        let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 20, pixelsHigh: 10,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+            isPlanar: false, colorSpaceName: .deviceRGB,
+            bytesPerRow: 0, bitsPerPixel: 0
+        )!
+        pasteboard.clearContents()
+        pasteboard.setData(rep.representation(using: .png, properties: [:])!, forType: .png)
+        monitor.tickForTesting()
+
+        XCTAssertEqual(try store.countItems(), 0)
+        let leftover = try FileManager.default
+            .subpathsOfDirectory(atPath: blobRoot.path)
+            .filter { $0.hasSuffix(".png") }
+        XCTAssertEqual(leftover, [], "dropped capture must not leave an orphaned blob on disk")
+    }
+
     func testCapturesFileURL() async throws {
         // Create a real temporary file so the modification date + size are real.
         let tmp = URL(fileURLWithPath: NSTemporaryDirectory())

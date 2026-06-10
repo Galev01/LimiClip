@@ -153,11 +153,16 @@ final class PasteboardMonitor {
             Log.app.error("image capture skipped: no blob store")
             return
         }
+        // Reject pathological inputs before paying decode + blob-write cost.
+        guard data.count <= ClipboardStore.maxImageBytes else {
+            Log.app.info("dropping oversize image (\(data.count, privacy: .public) bytes)")
+            return
+        }
         do {
             let processed = try ImageProcessor.process(data: data)
             let blobPath = try blobStore.write(data: processed.thumbnailData, fileExtension: "png")
             let hash = Self.hashBytes(data)
-            _ = try store.recordImage(
+            let recorded = try store.recordImage(
                 contentHash: hash,
                 blobPath: blobPath,
                 dimensions: processed.pixelSize,
@@ -165,6 +170,12 @@ final class PasteboardMonitor {
                 sourceApp: appName,
                 sourceBundleId: bundleId
             )
+            // Don't strand the new blob when the row was dropped (excluded
+            // bundle / cap) or deduped onto an existing row that keeps its
+            // original blob.
+            if recorded == nil || (recorded!.blobPath != nil && recorded!.blobPath != blobPath) {
+                try? blobStore.delete(relativePath: blobPath)
+            }
         } catch {
             Log.app.error("image capture failed: \(error.localizedDescription, privacy: .public)")
         }

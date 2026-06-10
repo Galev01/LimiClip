@@ -44,7 +44,7 @@ final class ScreenshotImporter {
         }
         let blobPath = try blobStore.write(data: processed.thumbnailData, fileExtension: "png")
         let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        return try store.recordImage(
+        let recorded = try store.recordImage(
             contentHash: hash,
             blobPath: blobPath,
             dimensions: processed.pixelSize,
@@ -52,6 +52,12 @@ final class ScreenshotImporter {
             sourceApp: "Screenshot",
             sourceBundleId: nil
         )
+        // Don't strand the new blob when the row was dropped or deduped onto
+        // an existing row that keeps its original blob.
+        if recorded == nil || (recorded!.blobPath != nil && recorded!.blobPath != blobPath) {
+            try? blobStore.delete(relativePath: blobPath)
+        }
+        return recorded
     }
 
     nonisolated(unsafe) private var query: NSMetadataQuery?

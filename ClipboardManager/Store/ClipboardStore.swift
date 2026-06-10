@@ -26,8 +26,13 @@ final class ClipboardStore: @unchecked Sendable {
     static let maxPinnedItems = 15
     static let maxImages = 5
 
-    /// Drop image captures whose source bytes exceed this, mirroring maxTextBytes.
-    static let maxImageBytes = 10 * 1024 * 1024   // 10 MB
+    /// Guard against pathological inputs only (decode cost / memory), NOT a
+    /// disk bound: pasteboard images usually arrive as UNCOMPRESSED TIFF, so a
+    /// modest Retina screenshot is 15-60 MB of raw bytes. Disk use is already
+    /// bounded by the ≤800px thumbnail (`ImageProcessor.maxThumbnailPixels`)
+    /// plus `maxImages` eviction — capping raw bytes at 10 MB silently dropped
+    /// nearly every native-app image copy.
+    static let maxImageBytes = 100 * 1024 * 1024   // 100 MB
 
     /// Upper bound on a single captured text item, measured in UTF-8 bytes.
     /// Oversized pastes are dropped (not truncated) to avoid the memory/disk

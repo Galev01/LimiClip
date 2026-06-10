@@ -106,6 +106,23 @@ final class ClipboardViewModelTests: XCTestCase {
         XCTAssertEqual(vm.focusedIndex, 0)
     }
 
+    func testResetTransientUIStateClearsSearchAndFocus() throws {
+        let store = try makeStore()
+        _ = try store.recordText("alpha", sourceApp: nil, sourceBundleId: nil)
+        _ = try store.recordText("beta", sourceApp: nil, sourceBundleId: nil)
+        let vm = ClipboardViewModel(store: store)
+        vm.searchQuery = "alp"
+        vm.searchExpanded = true
+        vm.moveFocus(by: 1)
+
+        vm.resetTransientUIState()
+
+        XCTAssertEqual(vm.searchQuery, "")
+        XCTAssertFalse(vm.searchExpanded)
+        XCTAssertEqual(vm.focusedIndex, 0)
+        XCTAssertEqual(vm.filteredItems.count, 2, "clearing search must restore the full list")
+    }
+
     func testCurrentItemReturnsFocusedOrNil() throws {
         let store = try makeStore()
         _ = try store.recordText("alpha", sourceApp: nil, sourceBundleId: nil)

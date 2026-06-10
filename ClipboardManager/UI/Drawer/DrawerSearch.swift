@@ -4,6 +4,7 @@ import SwiftUI
 struct DrawerSearch: View {
     @Binding var query: String
     @Binding var expanded: Bool
+    var onSubmit: () -> Void = {}
 
     @FocusState private var fieldFocused: Bool
     @Environment(\.colorScheme) private var scheme
@@ -20,7 +21,7 @@ struct DrawerSearch: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
                     .focused($fieldFocused)
-                    .onSubmit { /* no-op: search filters live */ }
+                    .onSubmit { onSubmit() }   // ⏎ pastes the focused result
                     .onExitCommand {
                         query = ""
                         expanded = false

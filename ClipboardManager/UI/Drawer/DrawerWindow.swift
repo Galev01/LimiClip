@@ -66,6 +66,33 @@ final class DrawerWindow: NSPanel {
     override var canBecomeMain: Bool { false }
     override var acceptsFirstResponder: Bool { true }
 
+    /// Digit-row keycodes are NOT contiguous: 7/8/9 are 26/28/25, and 24 ('=')
+    /// sits inside the old `18...26` range. Explicit map → item index.
+    private static let digitKeyCodes: [UInt16: Int] = [
+        18: 0, 19: 1, 20: 2, 21: 3, 23: 4, 22: 5, 26: 6, 28: 7, 25: 8,
+    ]
+
+    /// The app is headless (menu-bar only) and this panel is nonactivating,
+    /// so ⌘C/⌘V/⌘X/⌘A never resolve through a main menu. Route them to the
+    /// first responder (the search field's editor) explicitly — without this,
+    /// nothing can be pasted INTO or copied OUT of the search field.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
+            let action: Selector?
+            switch event.charactersIgnoringModifiers {
+            case "v": action = #selector(NSText.paste(_:))
+            case "c": action = #selector(NSText.copy(_:))
+            case "x": action = #selector(NSText.cut(_:))
+            case "a": action = #selector(NSText.selectAll(_:))
+            default:  action = nil
+            }
+            if let action, NSApp.sendAction(action, to: nil, from: self) {
+                return true
+            }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
     override func keyDown(with event: NSEvent) {
         let isCommand = event.modifierFlags.contains(.command)
 
@@ -83,10 +110,11 @@ final class DrawerWindow: NSPanel {
                     catch { Log.drawer.error("delete failed: \(error.localizedDescription, privacy: .public)") }
                 }
             }
-        case 18...26 where isCommand:
-            // ⌘1 = keyCode 18, ⌘2 = 19, ... ⌘9 = 25.
-            let n = Int(event.keyCode) - 18
+        case let code where isCommand && Self.digitKeyCodes[code] != nil:
+            let n = Self.digitKeyCodes[code]!
             Task { @MainActor in viewModel.jumpTo(index: n) }
+        case 44 where !isCommand:   // "/" expands search (bottom-bar hint)
+            Task { @MainActor in viewModel.searchExpanded = true }
         case 36, 76:   // return (36), keypad enter (76)
             if let item = viewModel.currentItem {
                 let asPlain = event.modifierFlags.contains(.shift)

@@ -25,6 +25,9 @@ final class ClipboardViewModel: ObservableObject {
     @Published var searchQuery: String = "" {
         didSet { focusedIndex = 0; refilter() }
     }
+    /// Whether the drawer's search field is expanded. Lives here (not view
+    /// @State) so the window controller can reset it when the drawer reopens.
+    @Published var searchExpanded: Bool = false
     @Published private(set) var focusedIndex: Int = 0
     @Published private(set) var filteredItems: [Item] = []
 
@@ -95,5 +98,13 @@ final class ClipboardViewModel: ObservableObject {
         let count = filteredItems.count
         guard count > 0 else { focusedIndex = 0; return }
         focusedIndex = max(0, min(count - 1, index))
+    }
+
+    /// Clears search text/expansion and focus. Called when the drawer is
+    /// (re)shown so each open starts from a clean slate — a stale query
+    /// otherwise hides items and a focused field swallows arrow keys.
+    func resetTransientUIState() {
+        searchExpanded = false
+        searchQuery = ""   // didSet resets focusedIndex and refilters
     }
 }

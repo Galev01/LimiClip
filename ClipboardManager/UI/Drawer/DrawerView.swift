@@ -29,7 +29,6 @@ struct DrawerView: View {
 
     @AppStorage(Settings.Key.showHoverPreview) private var showHoverPreview: Bool = true
 
-    @State private var searchExpanded: Bool = false
     @State private var hoveredID: Int64? = nil
     @State private var hoverTimer: DispatchWorkItem? = nil
     @State private var debouncedHoveredItem: Item? = nil
@@ -106,7 +105,13 @@ struct DrawerView: View {
 
     private var topBar: some View {
         HStack(alignment: .center) {
-            DrawerSearch(query: $viewModel.searchQuery, expanded: $searchExpanded)
+            DrawerSearch(
+                query: $viewModel.searchQuery,
+                expanded: $viewModel.searchExpanded,
+                onSubmit: {
+                    if let item = viewModel.currentItem { onPaste?(item, false) }
+                }
+            )
             Spacer(minLength: 16)
             DrawerTabBar(selectedTab: $viewModel.selectedTab)
             Spacer(minLength: 16)

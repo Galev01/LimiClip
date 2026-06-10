@@ -8,10 +8,12 @@ final class DrawerWindowController {
     nonisolated(unsafe) private var clickOutsideMonitor: Any?
     private let injector: PasteInjector
     private let store: ClipboardStore
+    private let viewModel: ClipboardViewModel
 
     init(viewModel: ClipboardViewModel, blobStore: BlobStore?, store: ClipboardStore, injector: PasteInjector) {
         self.injector = injector
         self.store = store
+        self.viewModel = viewModel
 
         var pasteHandler: ((Item, Bool) -> Void)!
         var copyHandler: ((Item) -> Void)!
@@ -60,6 +62,10 @@ final class DrawerWindowController {
 
     func show() {
         guard !isVisible else { return }
+        // Fresh slate on every open: a query left over from the previous
+        // open hides items, and a still-focused search field swallows the
+        // arrow keys (DrawerWindow.keyDown never sees them).
+        viewModel.resetTransientUIState()
         guard let screen = NSScreen.main ?? NSScreen.screens.first else {
             Log.drawer.error("no screen available")
             return
@@ -93,13 +99,17 @@ final class DrawerWindowController {
         }
     }
 
-    func hide() {
+    func hide(animated: Bool = true) {
         guard isVisible else { return }
         if let monitor = clickOutsideMonitor {
             NSEvent.removeMonitor(monitor)
             clickOutsideMonitor = nil
         }
-        guard let screen = window.screen ?? NSScreen.main else {
+        // The paste path needs the panel GONE (and key status resigned)
+        // before the synthesized ⌘V fires — an animated slide keeps the
+        // panel key for its full 0.28s, and the keystroke lands in the
+        // dying drawer instead of the target app.
+        guard animated, let screen = window.screen ?? NSScreen.main else {
             window.orderOut(nil)
             isVisible = false
             return
@@ -126,7 +136,9 @@ final class DrawerWindowController {
             Log.drawer.error("paste write failed: \(error.localizedDescription, privacy: .public)")
             return
         }
-        hide()
+        // Instant dismissal: the panel must resign key before ⌘V fires or
+        // the keystroke is swallowed by the drawer itself (see hide()).
+        hide(animated: false)
         // Silent check only — the drawer's banner is the single source of
         // permission guidance, so we don't spam the system dialog on every
         // paste. The item is on the clipboard either way; the user can
@@ -135,7 +147,7 @@ final class DrawerWindowController {
             Log.drawer.info("paste injection skipped — Accessibility permission missing")
             return
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             self?.injector.synthesizePasteKeystroke()
         }
     }

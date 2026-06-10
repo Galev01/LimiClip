@@ -90,7 +90,10 @@ final class CompactPopupWindowController {
             Log.drawer.info("compact paste skipped — Accessibility permission missing")
             return
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+        // hide() above orders the panel out immediately, so it has already
+        // resigned key; 0.15s gives the previous app time to take focus back
+        // before the synthesized ⌘V lands.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             self?.injector.synthesizePasteKeystroke()
         }
     }

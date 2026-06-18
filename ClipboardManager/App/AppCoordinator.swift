@@ -9,6 +9,7 @@ final class AppCoordinator {
     private let blobStore: BlobStore
     private let settings = Settings()
     private var annotationWindow: NSWindow?
+    private var screenFreezeWindow: NSWindow?
     private let viewModel: ClipboardViewModel
     private let menuBar: MenuBarController
     private let drawer: DrawerWindowController
@@ -66,7 +67,7 @@ final class AppCoordinator {
         self.screenshotImporter = ScreenshotImporter(store: store, blobStore: blobStore)
 
         drawer.onAnnotate = { [weak self] item in self?.presentAnnotation(for: item) }
-        hotkey.onScreenshot = { [weak self] in self?.captureScreenshotAndAnnotate() }
+        hotkey.onScreenshot = { [weak self] in self?.presentScreenFreeze() }
     }
 
     /// One-time alert explaining that the encryption key changed so older
@@ -89,37 +90,49 @@ final class AppCoordinator {
         presentAnnotation(base: nsImage)
     }
 
-    /// Opens the annotation editor on an in-memory image (e.g. a fresh
-    /// screenshot that hasn't been stored yet). The user decides its fate via
-    /// the editor's Copy / Save-to-Folder / Save-to-History actions.
+    /// The three flattened-PNG output actions shared by the annotation editor
+    /// (drawer images) and the screen-freeze overlay (fresh captures).
+    private func annotationOutputs() -> (copy: (Data) -> Void,
+                                         folder: (Data) -> Void,
+                                         history: (Data) -> Void) {
+        let copy: (Data) -> Void = { png in
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setData(png, forType: .png)
+        }
+        let folder: (Data) -> Void = { [settings] png in
+            let folder = AnnotationFolder.resolve(bookmark: settings.annotationSaveBookmark)
+            let scoped = folder.startAccessingSecurityScopedResource()
+            defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
+            do { _ = try AnnotationFolder.write(png: png, to: folder,
+                                                timestamp: Int64(Date().timeIntervalSince1970)) }
+            catch { Log.coordinator.error("annotate save failed: \(error.localizedDescription, privacy: .public)") }
+        }
+        let history: (Data) -> Void = { [store, blobStore] png in
+            do {
+                let processed = try ImageProcessor.process(data: png)
+                let blobPath = try blobStore.write(data: processed.thumbnailData, fileExtension: "png")
+                let hash = SHA256.hash(data: png).map { String(format: "%02x", $0) }.joined()
+                let recorded = try store.recordImage(contentHash: hash, blobPath: blobPath,
+                    dimensions: processed.pixelSize, byteSize: png.count,
+                    sourceApp: "Annotation", sourceBundleId: nil)
+                if recorded == nil || (recorded!.blobPath != nil && recorded!.blobPath != blobPath) {
+                    try? blobStore.delete(relativePath: blobPath)
+                }
+            } catch { Log.coordinator.error("annotate history save failed: \(error.localizedDescription, privacy: .public)") }
+        }
+        return (copy, folder, history)
+    }
+
+    /// Opens the annotation editor on an in-memory image (e.g. a stored drawer
+    /// image being re-annotated). The user decides its fate via the editor's
+    /// Copy / Save-to-Folder / Save-to-History actions.
     func presentAnnotation(base nsImage: NSImage) {
+        let outputs = annotationOutputs()
         let view = ImageAnnotationView(
             base: nsImage,
-            onCopy: { png in
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setData(png, forType: .png)
-            },
-            onSaveToFolder: { [settings] png in
-                let folder = AnnotationFolder.resolve(bookmark: settings.annotationSaveBookmark)
-                let scoped = folder.startAccessingSecurityScopedResource()
-                defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
-                do { _ = try AnnotationFolder.write(png: png, to: folder,
-                                                    timestamp: Int64(Date().timeIntervalSince1970)) }
-                catch { Log.coordinator.error("annotate save failed: \(error.localizedDescription, privacy: .public)") }
-            },
-            onSaveToHistory: { [store, blobStore] png in
-                do {
-                    let processed = try ImageProcessor.process(data: png)
-                    let blobPath = try blobStore.write(data: processed.thumbnailData, fileExtension: "png")
-                    let hash = SHA256.hash(data: png).map { String(format: "%02x", $0) }.joined()
-                    let recorded = try store.recordImage(contentHash: hash, blobPath: blobPath,
-                        dimensions: processed.pixelSize, byteSize: png.count,
-                        sourceApp: "Annotation", sourceBundleId: nil)
-                    if recorded == nil || (recorded!.blobPath != nil && recorded!.blobPath != blobPath) {
-                        try? blobStore.delete(relativePath: blobPath)
-                    }
-                } catch { Log.coordinator.error("annotate history save failed: \(error.localizedDescription, privacy: .public)") }
-            },
+            onCopy: outputs.copy,
+            onSaveToFolder: outputs.folder,
+            onSaveToHistory: outputs.history,
             onClose: { [weak self] in self?.annotationWindow?.close(); self?.annotationWindow = nil }
         )
         let panel = AnnotationPanel(content: view, size: Self.annotationPanelSize(for: nsImage))
@@ -127,6 +140,47 @@ final class AppCoordinator {
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         annotationWindow = panel
+    }
+
+    /// iShot-style capture: silently grab the screen, freeze it under a
+    /// full-screen overlay, let the user select a region and draw on it, then
+    /// copy / save / store the annotated crop.
+    func presentScreenFreeze() {
+        guard screenFreezeWindow == nil else { return }   // already up
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let data = await ScreenCapturer.captureMainDisplayPNG()
+            guard let data, let image = NSImage(data: data), let screen = NSScreen.main else {
+                Log.coordinator.error("screen freeze: capture failed (Screen Recording permission?)")
+                return
+            }
+            let outputs = self.annotationOutputs()
+            let view = ScreenFreezeView(
+                full: image,
+                viewSize: screen.frame.size,
+                scale: screen.backingScaleFactor,
+                onCopy: outputs.copy,
+                onSaveToFolder: outputs.folder,
+                onSaveToHistory: outputs.history,
+                onClose: { [weak self] in
+                    self?.screenFreezeWindow?.orderOut(nil)
+                    self?.screenFreezeWindow = nil
+                }
+            )
+            let window = ScreenFreezeWindow(contentRect: screen.frame,
+                                            styleMask: [.borderless],
+                                            backing: .buffered, defer: false)
+            window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.hasShadow = false
+            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            window.setFrame(screen.frame, display: true)
+            window.contentView = NSHostingView(rootView: view)
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            self.screenFreezeWindow = window
+        }
     }
 
     /// Panel size that fits the image (aspect-preserving) within sane bounds,
@@ -198,41 +252,8 @@ final class AppCoordinator {
         lastAppearance = appearance
     }
 
-    /// Spawns `screencapture -i -c` so the user can drag-select a region; when
-    /// it finishes, the captured image is read off the pasteboard and opened in
-    /// the annotation editor so the user can draw on it before deciding to copy
-    /// or save. The pasteboard monitor is paused across the capture so the raw
-    /// (un-annotated) screenshot is not auto-recorded into history — the editor
-    /// is the single decision point.
-    func captureScreenshotAndAnnotate() {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        task.arguments = ["-i", "-c"]
-        monitor.pause(until: .distantFuture)
-        task.terminationHandler = { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
-                // Resume capture shortly after, letting the monitor consume
-                // (and skip) this screenshot's changeCount.
-                self.monitor.pause(until: Date().addingTimeInterval(PasteboardMonitor.pollInterval * 2))
-                guard let image = Self.imageFromPasteboard() else {
-                    Log.coordinator.info("screenshot cancelled or produced no image")
-                    return
-                }
-                self.presentAnnotation(base: image)
-            }
-        }
-        do {
-            try task.run()
-            Log.coordinator.info("screencapture -i -c launched (annotate flow)")
-        } catch {
-            monitor.pause(until: PauseState.resumeDate)
-            Log.coordinator.error("screencapture launch failed: \(error.localizedDescription, privacy: .public)")
-        }
-    }
-
-    /// Reads a bitmap image off the general pasteboard (PNG/TIFF), or nil if the
-    /// user cancelled the capture / no image is present.
+    /// Reads a bitmap image off the general pasteboard (PNG/TIFF), or nil if no
+    /// image is present. Retained as a small utility.
     static func imageFromPasteboard() -> NSImage? {
         let pb = NSPasteboard.general
         if let data = pb.data(forType: .png) ?? pb.data(forType: .tiff),

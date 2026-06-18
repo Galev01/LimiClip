@@ -38,82 +38,85 @@ enum ScreenFreezeFlatten {
 
 // MARK: - Phase 1: live region selection (screen NOT yet frozen)
 
-/// A transparent full-screen overlay that dims the live screen and lets the
-/// user drag-select a region. On mouse-up it reports the region (view points);
-/// the screen is captured only afterwards, by the caller.
-struct SelectionOverlayView: View {
-    let viewSize: CGSize
-    var onSelected: (CGRect) -> Void
-    var onCancel: () -> Void
+/// A transparent full-screen overlay (pure AppKit) that dims the live screen
+/// and lets the user drag-select a region. AppKit mouse handling is used rather
+/// than SwiftUI gestures because a borderless, fully-transparent window does not
+/// reliably deliver SwiftUI drags. Coordinates are top-left origin (isFlipped)
+/// to match the capture and the annotation overlay. On mouse-up it reports the
+/// region in view points; the screen is captured only afterwards, by the caller.
+final class SelectionOverlayNSView: NSView {
+    var onSelected: ((CGRect) -> Void)?
+    var onCancel: (() -> Void)?
 
-    @State private var selStart: CGPoint?
-    @State private var selRect: CGRect = .zero
-    @State private var keyMonitor: Any?
+    private var start: CGPoint?
+    private var current: CGPoint?
+    private var keyMonitor: Any?
 
-    private var hasSelection: Bool { selRect.width > 1 && selRect.height > 1 }
+    override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            // A real (semi-opaque) dim layer with the selection masked out. This
-            // also gives the otherwise-transparent window real pixels so AppKit
-            // actually delivers mouse events to it. The drag gesture lives on the
-            // root (below) via contentShape so the whole screen is selectable.
-            Rectangle()
-                .fill(Color.black.opacity(0.30))
-                .mask(
-                    Canvas { ctx, size in
-                        ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
-                        if hasSelection {
-                            ctx.blendMode = .clear
-                            ctx.fill(Path(selRect), with: .color(.white))
-                        }
-                    }
-                )
-                .allowsHitTesting(false)
-
-            if hasSelection {
-                Rectangle()
-                    .strokeBorder(Color.white.opacity(0.9), lineWidth: 1.5)
-                    .frame(width: selRect.width, height: selRect.height)
-                    .offset(x: selRect.minX, y: selRect.minY)
-                    .allowsHitTesting(false)
-            }
-
-            if !hasSelection {
-                Text("Drag to select an area  ·  Esc to cancel")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(.black.opacity(0.55), in: Capsule())
-                    .position(x: viewSize.width / 2, y: 44)
-                    .allowsHitTesting(false)
-            }
-        }
-        .frame(width: viewSize.width, height: viewSize.height)
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { v in
-                    let s = selStart ?? v.startLocation
-                    selStart = s
-                    selRect = rect(s, v.location).intersection(CGRect(origin: .zero, size: viewSize))
-                }
-                .onEnded { _ in
-                    if hasSelection { onSelected(selRect) }
-                    else { selRect = .zero; selStart = nil }
-                }
-        )
-        .onAppear {
-            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
-                if e.keyCode == 53 { onCancel(); return nil }   // Esc
-                return e
-            }
-        }
-        .onDisappear { if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil } }
+    private var selRect: CGRect {
+        guard let s = start, let c = current else { return .zero }
+        return CGRect(x: min(s.x, c.x), y: min(s.y, c.y), width: abs(s.x - c.x), height: abs(s.y - c.y))
     }
 
-    private func rect(_ a: CGPoint, _ b: CGPoint) -> CGRect {
-        CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
+    override func mouseDown(with e: NSEvent) {
+        Log.app.info("screen freeze: selection mouseDown")
+        start = convert(e.locationInWindow, from: nil)
+        current = start
+        needsDisplay = true
+    }
+
+    override func mouseDragged(with e: NSEvent) {
+        current = convert(e.locationInWindow, from: nil)
+        needsDisplay = true
+    }
+
+    override func mouseUp(with e: NSEvent) {
+        current = convert(e.locationInWindow, from: nil)
+        let r = selRect
+        if r.width > 5, r.height > 5 {
+            Log.app.info("screen freeze: selection complete \(Int(r.width), privacy: .public)x\(Int(r.height), privacy: .public)")
+            onSelected?(r)
+        } else {
+            start = nil; current = nil; needsDisplay = true
+        }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil, keyMonitor == nil {
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
+                if e.keyCode == 53 { self?.onCancel?(); return nil }   // Esc
+                return e
+            }
+        } else if window == nil, let m = keyMonitor {
+            NSEvent.removeMonitor(m); keyMonitor = nil
+        }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        // Dim the whole (transparent) overlay so the live screen shows through
+        // darkened, then punch the selection back to fully transparent + border.
+        NSColor.black.withAlphaComponent(0.30).setFill()
+        bounds.fill()
+
+        let r = selRect
+        if r.width > 0, r.height > 0 {
+            NSColor.clear.set()
+            r.fill(using: .copy)               // clears to transparent (live screen)
+            NSColor.white.withAlphaComponent(0.9).setStroke()
+            let path = NSBezierPath(rect: r); path.lineWidth = 1.5; path.stroke()
+        } else {
+            let hint = "Drag to select an area  ·  Esc to cancel"
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+                .foregroundColor: NSColor.white,
+            ]
+            let size = (hint as NSString).size(withAttributes: attrs)
+            (hint as NSString).draw(at: NSPoint(x: bounds.midX - size.width / 2, y: 36), withAttributes: attrs)
+        }
     }
 }
 

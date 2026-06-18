@@ -147,14 +147,14 @@ final class AppCoordinator {
     /// copy / save / store the annotated crop.
     func presentScreenFreeze() {
         guard screenFreezeWindow == nil, let screen = NSScreen.main else { return }
-        // Phase 1: live region selection (screen is NOT frozen yet).
-        let selection = SelectionOverlayView(
-            viewSize: screen.frame.size,
-            onSelected: { [weak self] rect in self?.captureAndAnnotate(selection: rect, screen: screen) },
-            onCancel: { [weak self] in self?.dismissScreenFreeze() }
-        )
-        let window = makeFreezeWindow(screen: screen, rootView: selection)
+        // Phase 1: live region selection (screen is NOT frozen yet) — pure AppKit.
+        let selectionView = SelectionOverlayNSView(frame: NSRect(origin: .zero, size: screen.frame.size))
+        selectionView.onSelected = { [weak self] rect in self?.captureAndAnnotate(selection: rect, screen: screen) }
+        selectionView.onCancel = { [weak self] in self?.dismissScreenFreeze() }
+        let window = makeFreezeWindow(screen: screen)
+        window.contentView = selectionView
         window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(selectionView)
         NSApp.activate(ignoringOtherApps: true)
         screenFreezeWindow = window
     }
@@ -185,7 +185,8 @@ final class AppCoordinator {
                 onSaveToHistory: outputs.history,
                 onClose: { [weak self] in self?.dismissScreenFreeze() }
             )
-            let window = self.makeFreezeWindow(screen: screen, rootView: view)
+            let window = self.makeFreezeWindow(screen: screen)
+            window.contentView = NSHostingView(rootView: view)
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             self.screenFreezeWindow = window
@@ -197,8 +198,9 @@ final class AppCoordinator {
         screenFreezeWindow = nil
     }
 
-    /// Builds a borderless, transparent, top-level overlay window covering `screen`.
-    private func makeFreezeWindow(screen: NSScreen, rootView: some View) -> NSWindow {
+    /// Builds a borderless, transparent, top-level overlay window covering
+    /// `screen`. The caller sets `contentView`.
+    private func makeFreezeWindow(screen: NSScreen) -> NSWindow {
         let window = ScreenFreezeWindow(contentRect: screen.frame,
                                         styleMask: [.borderless],
                                         backing: .buffered, defer: false)
@@ -208,7 +210,6 @@ final class AppCoordinator {
         window.hasShadow = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         window.setFrame(screen.frame, display: true)
-        window.contentView = NSHostingView(rootView: rootView)
         return window
     }
 

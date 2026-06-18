@@ -20,4 +20,17 @@ final class ScreenCaptureGeometryTests: XCTestCase {
             CGPoint(x: 60, y: 80), selectionOrigin: CGPoint(x: 10, y: 20), scale: 2)
         XCTAssertEqual(p, CGPoint(x: 100, y: 120))
     }
+
+    func test_screencaptureRect_primaryIsIdentity() {
+        let r = ScreenCaptureGeometry.screencaptureRect(
+            for: CGRect(x: 0, y: 0, width: 1440, height: 900), primaryHeight: 900)
+        XCTAssertEqual(r, CGRect(x: 0, y: 0, width: 1440, height: 900))
+    }
+
+    func test_screencaptureRect_secondaryToTheRight() {
+        // Secondary 1280x800, bottom-aligned to the right of a 900-tall primary.
+        let r = ScreenCaptureGeometry.screencaptureRect(
+            for: CGRect(x: 1440, y: 0, width: 1280, height: 800), primaryHeight: 900)
+        XCTAssertEqual(r, CGRect(x: 1440, y: 100, width: 1280, height: 800))
+    }
 }

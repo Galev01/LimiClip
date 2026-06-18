@@ -146,7 +146,12 @@ final class AppCoordinator {
     /// full-screen overlay, let the user select a region and draw on it, then
     /// copy / save / store the annotated crop.
     func presentScreenFreeze() {
-        guard screenFreezeWindow == nil, let screen = NSScreen.main else { return }
+        guard screenFreezeWindow == nil else { return }
+        // Target the screen under the mouse (not necessarily the primary), so
+        // selection and capture happen on the SAME display.
+        let mouse = NSEvent.mouseLocation
+        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) ?? NSScreen.main
+        else { return }
         // Phase 1: live region selection (screen is NOT frozen yet) — pure AppKit.
         let selectionView = SelectionOverlayNSView(frame: NSRect(origin: .zero, size: screen.frame.size))
         selectionView.onSelected = { [weak self] rect in self?.captureAndAnnotate(selection: rect, screen: screen) }
@@ -165,20 +170,27 @@ final class AppCoordinator {
     private func captureAndAnnotate(selection: CGRect, screen: NSScreen) {
         screenFreezeWindow?.orderOut(nil)
         screenFreezeWindow = nil
+        let frame = screen.frame
+        let primaryHeight = NSScreen.screens.first(where: { $0.frame.origin == .zero })?.frame.height ?? frame.height
+        let captureRect = ScreenCaptureGeometry.screencaptureRect(for: frame, primaryHeight: primaryHeight)
         Task { @MainActor [weak self] in
             guard let self else { return }
             // Let the overlay fully leave the screen before the grab.
             try? await Task.sleep(nanoseconds: 60_000_000)
-            let data = await ScreenCapturer.captureMainDisplayPNG()
-            guard let data, let image = NSImage(data: data) else {
+            let data = await ScreenCapturer.captureRegionPNG(globalRect: captureRect)
+            guard let data, let image = NSImage(data: data),
+                  let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
                 Log.coordinator.error("screen freeze: capture failed (Screen Recording permission?)")
                 return
             }
+            // Derive scale from the actual capture so cropping is exact regardless
+            // of how screencapture rendered the display's resolution.
+            let scale = frame.width > 0 ? CGFloat(cg.width) / frame.width : screen.backingScaleFactor
             let outputs = self.annotationOutputs()
             let view = ScreenFreezeView(
                 full: image,
-                viewSize: screen.frame.size,
-                scale: screen.backingScaleFactor,
+                viewSize: frame.size,
+                scale: scale,
                 selRect: selection,
                 onCopy: outputs.copy,
                 onSaveToFolder: outputs.folder,

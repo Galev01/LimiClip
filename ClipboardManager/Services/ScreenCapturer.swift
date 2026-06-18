@@ -9,20 +9,21 @@ import CoreGraphics
 /// already granted to the app.)
 enum ScreenCapturer {
 
-    /// Silently captures the main display and returns the PNG bytes (top-left
-    /// origin, native pixel resolution), or nil on failure (e.g. Screen
-    /// Recording denied). Returns `Data` (Sendable) rather than `NSImage` so the
-    /// caller can build the image on the main actor. Runs the capture off the
-    /// main thread.
-    static func captureMainDisplayPNG() async -> Data? {
+    /// Silently captures the screen rectangle `globalRect` (screencapture's
+    /// top-left global coordinate space, points) and returns the PNG bytes at
+    /// native pixel resolution, or nil on failure. Capturing by region (`-R`)
+    /// rather than by display index means the correct monitor is captured even
+    /// in multi-display setups. Returns `Data` (Sendable); runs off the main
+    /// thread.
+    static func captureRegionPNG(globalRect r: CGRect) async -> Data? {
         await withCheckedContinuation { (cont: CheckedContinuation<Data?, Never>) in
             DispatchQueue.global(qos: .userInitiated).async {
                 let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
                     .appendingPathComponent("limiclip-freeze-\(UUID().uuidString).png")
+                let region = "-R\(Int(r.minX.rounded())),\(Int(r.minY.rounded())),\(Int(r.width.rounded())),\(Int(r.height.rounded()))"
                 let task = Process()
                 task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-                // -x: silent (no sound/flash)  -m: main display only  -t png
-                task.arguments = ["-x", "-m", "-t", "png", tmp.path]
+                task.arguments = ["-x", region, "-t", "png", tmp.path]   // -x: silent
                 do {
                     try task.run()
                     task.waitUntilExit()
@@ -53,5 +54,16 @@ enum ScreenCaptureGeometry {
     static func toSelectionPixels(_ point: CGPoint, selectionOrigin: CGPoint, scale: CGFloat) -> CGPoint {
         CGPoint(x: (point.x - selectionOrigin.x) * scale,
                 y: (point.y - selectionOrigin.y) * scale)
+    }
+
+    /// Converts an `NSScreen.frame` (AppKit global, bottom-left origin) to the
+    /// top-left global rect `screencapture -R` expects, given the primary
+    /// display's height. This is what makes capture target the SAME monitor the
+    /// overlay is shown on, regardless of which display is primary.
+    static func screencaptureRect(for screenFrame: CGRect, primaryHeight: CGFloat) -> CGRect {
+        CGRect(x: screenFrame.minX,
+               y: primaryHeight - screenFrame.maxY,
+               width: screenFrame.width,
+               height: screenFrame.height)
     }
 }

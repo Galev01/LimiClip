@@ -106,6 +106,27 @@ final class BlobStoreTests: XCTestCase {
                        "legacy plaintext blobs must still read correctly after encryption ships")
     }
 
+    /// Regression: a sealed blob that fails to decrypt (the live-install case
+    /// where the keychain master key no longer matches the key that sealed the
+    /// on-disk `GCM1` blob) must SURFACE the failure, not be silently returned
+    /// as empty `Data()`. Empty data masquerades as a valid-but-blank blob and
+    /// the UI silently renders a gray placeholder instead of the image.
+    func testSealedBlobWithWrongKeyThrowsInsteadOfReturningEmpty() throws {
+        // Seal a blob with one key (simulating the binary that wrote the blob).
+        let writer = FieldCipher(masterKeyData: Data(repeating: 1, count: 32))
+        let writeStore = try BlobStore(rootDirectory: tempRoot, cipher: writer)
+        let original = Data("a screenshot's worth of secret pixels".utf8)
+        let relPath = try writeStore.write(data: original, fileExtension: "png")
+
+        // Read it back with a DIFFERENT key (simulating a re-signed/stale binary
+        // whose derived blobKey no longer matches). GCM auth must fail.
+        let reader = FieldCipher(masterKeyData: Data(repeating: 2, count: 32))
+        let readStore = try BlobStore(rootDirectory: tempRoot, cipher: reader)
+
+        XCTAssertThrowsError(try readStore.read(relativePath: relPath),
+                             "undecryptable sealed blob must throw, not return empty Data")
+    }
+
     // MARK: - Path-traversal confinement
 
     func testReadRejectsParentTraversal() throws {

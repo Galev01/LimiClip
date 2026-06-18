@@ -92,6 +92,25 @@ struct FieldCipher: Sendable {
         return opened
     }
 
+    /// Throwing variant of `open(_:)` for blobs. Legacy plaintext (no GCM magic)
+    /// passes through unchanged, but a SEALED blob that fails to decrypt — wrong
+    /// key (e.g. a re-signed/stale binary whose derived `blobKey` no longer
+    /// matches the key that sealed the file), corruption, or tampering — throws
+    /// `Failure.openFailed` instead of silently returning empty `Data()`. The
+    /// silent-empty path made undecryptable images masquerade as valid-but-blank
+    /// blobs, so the UI rendered a gray placeholder with no surfaced error.
+    func open(sealedBlob data: Data) throws -> Data {
+        guard data.prefix(Self.blobMagic.count) == Self.blobMagic else { return data }
+        let body = Data(data.dropFirst(Self.blobMagic.count))
+        guard let box = try? AES.GCM.SealedBox(combined: body),
+              let opened = try? AES.GCM.open(box, using: blobKey)
+        else {
+            Log.app.warning("FieldCipher: sealed blob failed to open; surfacing error")
+            throw Failure.openFailed
+        }
+        return opened
+    }
+
     // MARK: - Dedup hash
 
     /// Keyed HMAC-SHA256, hex. Deterministic (so content-hash dedup still works)
@@ -102,5 +121,5 @@ struct FieldCipher: Sendable {
         return mac.map { String(format: "%02x", $0) }.joined()
     }
 
-    enum Failure: Error { case sealFailed }
+    enum Failure: Error, Equatable { case sealFailed, openFailed }
 }

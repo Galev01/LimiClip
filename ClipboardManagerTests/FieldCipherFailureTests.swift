@@ -36,6 +36,25 @@ final class FieldCipherFailureTests: XCTestCase {
         XCTAssertEqual(a.open(png), png)
     }
 
+    /// Regression: the throwing blob-open must SURFACE a decrypt failure for a
+    /// sealed blob whose key no longer matches, rather than silently swallowing
+    /// it into empty `Data()` (the live-install gray-placeholder root cause).
+    func testThrowingBlobOpenSurfacesWrongKeyFailure() throws {
+        let a = cipher(1)
+        let b = cipher(2)
+        let sealed = try a.seal(Data("payload".utf8))
+        XCTAssertThrowsError(try b.open(sealedBlob: sealed)) { error in
+            XCTAssertEqual(error as? FieldCipher.Failure, .openFailed)
+        }
+    }
+
+    /// The throwing open still passes legacy plaintext (no GCM magic) through.
+    func testThrowingBlobOpenPassesLegacyPlaintext() throws {
+        let a = cipher(1)
+        let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+        XCTAssertEqual(try a.open(sealedBlob: png), png)
+    }
+
     func testRoundTripStillWorks() throws {
         let a = cipher(7)
         XCTAssertEqual(a.open(try a.seal("hi")), "hi")

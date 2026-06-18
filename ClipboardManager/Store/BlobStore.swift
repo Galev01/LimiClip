@@ -74,7 +74,11 @@ final class BlobStore: @unchecked Sendable {
     func read(relativePath: String) throws -> Data {
         let fullURL = try resolve(relativePath: relativePath)
         let raw = try Data(contentsOf: fullURL)
-        return cipher.map { $0.open(raw) } ?? raw
+        // Use the throwing open so an undecryptable sealed blob (e.g. a
+        // key-mismatch from a re-signed/stale binary) surfaces as an error
+        // rather than silently returning empty Data that the UI renders as a
+        // blank/gray placeholder.
+        return try cipher.map { try $0.open(sealedBlob: raw) } ?? raw
     }
 
     func delete(relativePath: String) throws {

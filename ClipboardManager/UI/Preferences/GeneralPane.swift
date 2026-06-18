@@ -8,6 +8,7 @@ struct GeneralPane: View {
     @AppStorage(Settings.Key.showHoverPreview) private var showHoverPreview: Bool = true
     @AppStorage(Settings.Key.compactMode) private var compactMode: Bool = false
     @AppStorage(Settings.Key.saveScreenshots) private var saveScreenshots: Bool = false
+    @AppStorage(Settings.Key.annotationSaveFolder) private var annotationFolderData: Data?
 
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
 
@@ -69,6 +70,26 @@ struct GeneralPane: View {
                 Text("When off, ⌘⇧A screenshots are copied to the clipboard for pasting but not saved into history.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+            }
+
+            Section("Annotation") {
+                HStack {
+                    Text("Save folder")
+                    Spacer()
+                    Text(AnnotationFolder.resolve(bookmark: annotationFolderData)
+                            .lastPathComponent)
+                        .foregroundStyle(.secondary)
+                    Button("Choose…") {
+                        let panel = NSOpenPanel()
+                        panel.canChooseDirectories = true
+                        panel.canChooseFiles = false
+                        panel.allowsMultipleSelection = false
+                        if panel.runModal() == .OK, let url = panel.url,
+                           let data = try? AnnotationFolder.makeBookmark(for: url) {
+                            annotationFolderData = data
+                        }
+                    }
+                }
             }
         }
         .formStyle(.grouped)

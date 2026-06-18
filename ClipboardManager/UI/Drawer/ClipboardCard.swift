@@ -11,6 +11,7 @@ struct ClipboardCard: View {
     var onOpenURL: ((Item) -> Void)? = nil
     var onRevealInFinder: ((Item) -> Void)? = nil
     var onPin: ((Item, Bool) -> Void)? = nil
+    var onAnnotate: ((Item) -> Void)? = nil
     @Environment(\.colorScheme) private var scheme
     @Environment(\.blobStore) private var blobStore
 
@@ -73,6 +74,9 @@ struct ClipboardCard: View {
             }
             if item.kind == "file" {
                 Button("Reveal in Finder") { onRevealInFinder?(item) }
+            }
+            if item.kind == "image" {
+                Button("Annotate") { onAnnotate?(item) }
             }
             Divider()
             if item.pinned {

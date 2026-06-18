@@ -17,6 +17,7 @@ final class DrawerWindow: NSPanel {
         onOpenURL: @escaping (Item) -> Void,
         onRevealInFinder: @escaping (Item) -> Void,
         onPin: @escaping (Item, Bool) -> Void,
+        onAnnotate: @escaping (Item) -> Void,
         onClearAll: @escaping () -> Void,
         accessibilityCheck: @escaping () -> Bool = { true }
     ) {
@@ -47,6 +48,7 @@ final class DrawerWindow: NSPanel {
             onPaste: onPaste, onCopy: onCopy, onDelete: onDelete,
             onOpenURL: onOpenURL, onRevealInFinder: onRevealInFinder,
             onPin: onPin,
+            onAnnotate: onAnnotate,
             onClearAll: onClearAll,
             accessibilityCheck: accessibilityCheck
         ))

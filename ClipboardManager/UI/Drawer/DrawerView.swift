@@ -12,6 +12,7 @@ struct DrawerView: View {
     var onOpenURL: ((Item) -> Void)? = nil
     var onRevealInFinder: ((Item) -> Void)? = nil
     var onPin: ((Item, Bool) -> Void)? = nil
+    var onAnnotate: ((Item) -> Void)? = nil
     var onClearAll: (() -> Void)? = nil
 
     var accessibilityCheck: () -> Bool = { true }
@@ -150,7 +151,8 @@ struct DrawerView: View {
                             onDelete: { onDelete?($0) },
                             onOpenURL: { onOpenURL?($0) },
                             onRevealInFinder: { onRevealInFinder?($0) },
-                            onPin: { onPin?($0, $1) }
+                            onPin: { onPin?($0, $1) },
+                            onAnnotate: { onAnnotate?($0) }
                         )
                             .id(item.id ?? -1)
                             .onTapGesture {

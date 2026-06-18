@@ -10,6 +10,10 @@ final class DrawerWindowController {
     private let store: ClipboardStore
     private let viewModel: ClipboardViewModel
 
+    /// Set by the coordinator after construction (the coordinator can't pass a
+    /// `self`-capturing closure into its own `let` properties during init).
+    var onAnnotate: ((Item) -> Void)?
+
     init(viewModel: ClipboardViewModel, blobStore: BlobStore?, store: ClipboardStore, injector: PasteInjector) {
         self.injector = injector
         self.store = store
@@ -21,6 +25,7 @@ final class DrawerWindowController {
         var openURLHandler: ((Item) -> Void)!
         var revealHandler: ((Item) -> Void)!
         var pinHandler: ((Item, Bool) -> Void)!
+        var annotateHandler: ((Item) -> Void)!
         var clearAllHandler: (() -> Void)!
 
         self.window = DrawerWindow(
@@ -31,6 +36,7 @@ final class DrawerWindowController {
             onOpenURL: { item in openURLHandler(item) },
             onRevealInFinder: { item in revealHandler(item) },
             onPin: { item, pinned in pinHandler(item, pinned) },
+            onAnnotate: { item in annotateHandler(item) },
             onClearAll: { clearAllHandler() },
             accessibilityCheck: { [injector] in injector.hasAccessibilityPermission }
         )
@@ -46,6 +52,7 @@ final class DrawerWindowController {
         openURLHandler = { [weak self] item in self?.handleOpenURL(item: item) }
         revealHandler = { [weak self] item in self?.handleReveal(item: item) }
         pinHandler = { [weak self] item, pinned in self?.handlePin(item: item, pinned: pinned) }
+        annotateHandler = { [weak self] item in self?.onAnnotate?(item) }
         clearAllHandler = { [weak self] in self?.handleClearAll() }
     }
 

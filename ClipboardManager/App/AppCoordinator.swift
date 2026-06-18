@@ -1,10 +1,14 @@
 // ClipboardManager/App/AppCoordinator.swift
 import AppKit
+import SwiftUI
+import CryptoKit
 
 @MainActor
 final class AppCoordinator {
     private let store: ClipboardStore
     private let blobStore: BlobStore
+    private let settings = Settings()
+    private var annotationWindow: NSWindow?
     private let viewModel: ClipboardViewModel
     private let menuBar: MenuBarController
     private let drawer: DrawerWindowController
@@ -61,6 +65,55 @@ final class AppCoordinator {
         )
         self.retention = RetentionJob(store: store, blobStore: blobStore)
         self.screenshotImporter = ScreenshotImporter(store: store, blobStore: blobStore)
+
+        drawer.onAnnotate = { [weak self] item in self?.presentAnnotation(for: item) }
+    }
+
+    func presentAnnotation(for item: Item) {
+        guard let path = item.blobPath,
+              let nsImage = ImageCache.shared.image(forKey: path, blobStore: blobStore, path: path)
+        else { Log.coordinator.error("annotate: cannot load image blob"); return }
+
+        let view = ImageAnnotationView(
+            base: nsImage,
+            onCopy: { png in
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setData(png, forType: .png)
+            },
+            onSaveToFolder: { [settings] png in
+                let folder = AnnotationFolder.resolve(bookmark: settings.annotationSaveBookmark)
+                let scoped = folder.startAccessingSecurityScopedResource()
+                defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
+                do { _ = try AnnotationFolder.write(png: png, to: folder,
+                                                    timestamp: Int64(Date().timeIntervalSince1970)) }
+                catch { Log.coordinator.error("annotate save failed: \(error.localizedDescription, privacy: .public)") }
+            },
+            onSaveToHistory: { [store, blobStore] png in
+                do {
+                    let processed = try ImageProcessor.process(data: png)
+                    let blobPath = try blobStore.write(data: processed.thumbnailData, fileExtension: "png")
+                    let hash = SHA256.hash(data: png).map { String(format: "%02x", $0) }.joined()
+                    let recorded = try store.recordImage(contentHash: hash, blobPath: blobPath,
+                        dimensions: processed.pixelSize, byteSize: png.count,
+                        sourceApp: "Annotation", sourceBundleId: nil)
+                    if recorded == nil || (recorded!.blobPath != nil && recorded!.blobPath != blobPath) {
+                        try? blobStore.delete(relativePath: blobPath)
+                    }
+                } catch { Log.coordinator.error("annotate history save failed: \(error.localizedDescription, privacy: .public)") }
+            },
+            onClose: { [weak self] in self?.annotationWindow?.close(); self?.annotationWindow = nil }
+        )
+        let hosting = NSHostingController(rootView: view)
+        let window = NSWindow(contentViewController: hosting)
+        window.title = "Annotate Image"
+        window.styleMask = [.titled, .closable, .resizable]
+        window.setContentSize(NSSize(width: 720, height: 560))
+        window.center()
+        let wc = NSWindowController(window: window)
+        wc.showWindow(nil)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        annotationWindow = window
     }
 
     func start() {

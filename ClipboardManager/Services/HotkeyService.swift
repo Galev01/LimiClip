@@ -20,12 +20,14 @@ extension KeyboardShortcuts.Name {
 @MainActor
 final class HotkeyService {
     private let onToggle: @MainActor () -> Void
-    private let onScreenshot: @MainActor () -> Void
+    /// Assignable after construction so the coordinator can wire it once `self`
+    /// is fully initialized (the handler fires later, in `start()`).
+    var onScreenshot: @MainActor () -> Void
     private let onCompactToggle: @MainActor () -> Void
 
     init(
         onToggle: @escaping @MainActor () -> Void,
-        onScreenshot: @escaping @MainActor () -> Void,
+        onScreenshot: @escaping @MainActor () -> Void = { @MainActor in },
         onCompactToggle: @escaping @MainActor () -> Void = { @MainActor in }
     ) {
         self.onToggle = onToggle

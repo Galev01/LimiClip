@@ -60,13 +60,13 @@ final class AppCoordinator {
         )
         self.hotkey = HotkeyService(
             onToggle: { drawer.toggle() },
-            onScreenshot: { AppCoordinator.captureScreenshotToClipboard(monitor: monitor) },
             onCompactToggle: { compact.toggle(near: NSEvent.mouseLocation) }
         )
         self.retention = RetentionJob(store: store, blobStore: blobStore)
         self.screenshotImporter = ScreenshotImporter(store: store, blobStore: blobStore)
 
         drawer.onAnnotate = { [weak self] item in self?.presentAnnotation(for: item) }
+        hotkey.onScreenshot = { [weak self] in self?.captureScreenshotAndAnnotate() }
     }
 
     /// One-time alert explaining that the encryption key changed so older
@@ -86,7 +86,13 @@ final class AppCoordinator {
         guard let path = item.blobPath,
               let nsImage = ImageCache.shared.image(forKey: path, blobStore: blobStore, path: path)
         else { Log.coordinator.error("annotate: cannot load image blob"); return }
+        presentAnnotation(base: nsImage)
+    }
 
+    /// Opens the annotation editor on an in-memory image (e.g. a fresh
+    /// screenshot that hasn't been stored yet). The user decides its fate via
+    /// the editor's Copy / Save-to-Folder / Save-to-History actions.
+    func presentAnnotation(base nsImage: NSImage) {
         let view = ImageAnnotationView(
             base: nsImage,
             onCopy: { png in
@@ -185,32 +191,47 @@ final class AppCoordinator {
         lastAppearance = appearance
     }
 
-    /// Spawns `screencapture -i -c` so the user can drag-select a region; the
-    /// resulting image lands on NSPasteboard. When the "Save screenshots to
-    /// history" setting is OFF (the default), capture is paused across the
-    /// screencapture lifecycle so the image reaches the clipboard for pasting
-    /// but is NOT recorded into history.
-    static func captureScreenshotToClipboard(monitor: PasteboardMonitor, settings: Settings = Settings()) {
-        let save = settings.saveScreenshots
+    /// Spawns `screencapture -i -c` so the user can drag-select a region; when
+    /// it finishes, the captured image is read off the pasteboard and opened in
+    /// the annotation editor so the user can draw on it before deciding to copy
+    /// or save. The pasteboard monitor is paused across the capture so the raw
+    /// (un-annotated) screenshot is not auto-recorded into history — the editor
+    /// is the single decision point.
+    func captureScreenshotAndAnnotate() {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
         task.arguments = ["-i", "-c"]
-        if !save {
-            monitor.pause(until: .distantFuture)
-            task.terminationHandler = { _ in
-                // Keep paused briefly so the monitor's poll consumes (and
-                // skips) the screenshot's changeCount, then resume.
-                Task { @MainActor in
-                    monitor.pause(until: Date().addingTimeInterval(PasteboardMonitor.pollInterval * 2))
+        monitor.pause(until: .distantFuture)
+        task.terminationHandler = { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                // Resume capture shortly after, letting the monitor consume
+                // (and skip) this screenshot's changeCount.
+                self.monitor.pause(until: Date().addingTimeInterval(PasteboardMonitor.pollInterval * 2))
+                guard let image = Self.imageFromPasteboard() else {
+                    Log.coordinator.info("screenshot cancelled or produced no image")
+                    return
                 }
+                self.presentAnnotation(base: image)
             }
         }
         do {
             try task.run()
-            Log.coordinator.info("screencapture -i -c launched (save=\(save, privacy: .public))")
+            Log.coordinator.info("screencapture -i -c launched (annotate flow)")
         } catch {
-            if !save { monitor.pause(until: PauseState.resumeDate) }
+            monitor.pause(until: PauseState.resumeDate)
             Log.coordinator.error("screencapture launch failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// Reads a bitmap image off the general pasteboard (PNG/TIFF), or nil if the
+    /// user cancelled the capture / no image is present.
+    static func imageFromPasteboard() -> NSImage? {
+        let pb = NSPasteboard.general
+        if let data = pb.data(forType: .png) ?? pb.data(forType: .tiff),
+           let image = NSImage(data: data) {
+            return image
+        }
+        return NSImage(pasteboard: pb)
     }
 }

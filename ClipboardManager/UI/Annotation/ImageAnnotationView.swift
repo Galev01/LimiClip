@@ -235,8 +235,11 @@ struct ImageAnnotationView: View {
             Spacer()
 
             Button("Copy") { flattenThenCallback(onCopy) }
+                .keyboardShortcut("c", modifiers: .command)
             Button("Save to Folder") { flattenThenCallback(onSaveToFolder) }
+                .keyboardShortcut("s", modifiers: .command)
             Button("Save to History") { flattenThenCallback(onSaveToHistory) }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
         }
     }
 

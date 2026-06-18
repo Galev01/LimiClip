@@ -45,6 +45,7 @@ struct Settings: @unchecked Sendable {
         static let strictCaptureMode = "strictCaptureMode"
         static let saveScreenshots = "saveScreenshots"
         static let captureScreenshotFiles = "captureScreenshotFiles"
+        static let annotationSaveFolder = "annotationSaveFolder"
     }
 
     let defaults: UserDefaults
@@ -123,6 +124,13 @@ struct Settings: @unchecked Sendable {
             return defaults.bool(forKey: Key.captureScreenshotFiles)
         }
         nonmutating set { defaults.set(newValue, forKey: Key.captureScreenshotFiles) }
+    }
+
+    /// Security-scoped bookmark to the folder where flattened annotated images
+    /// are saved. Nil when unset (callers fall back to ~/Pictures).
+    var annotationSaveBookmark: Data? {
+        get { defaults.data(forKey: Key.annotationSaveFolder) }
+        nonmutating set { defaults.set(newValue, forKey: Key.annotationSaveFolder) }
     }
 }
 

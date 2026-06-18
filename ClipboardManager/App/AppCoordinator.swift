@@ -69,6 +69,19 @@ final class AppCoordinator {
         drawer.onAnnotate = { [weak self] item in self?.presentAnnotation(for: item) }
     }
 
+    /// One-time alert explaining that the encryption key changed so older
+    /// encrypted images could not be recovered and were removed.
+    private func surfaceKeyMismatch(prunedCount: Int) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Encryption key changed"
+        alert.informativeText = prunedCount > 0
+            ? "The app's encryption key changed (this usually happens after reinstalling or re-signing the app). \(prunedCount) older image\(prunedCount == 1 ? "" : "s") could no longer be decrypted and \(prunedCount == 1 ? "was" : "were") removed. New clipboard items are unaffected."
+            : "The app's encryption key changed (this usually happens after reinstalling or re-signing the app). Previously stored encrypted items may no longer be readable. New clipboard items are unaffected."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
     func presentAnnotation(for item: Item) {
         guard let path = item.blobPath,
               let nsImage = ImageCache.shared.image(forKey: path, blobStore: blobStore, path: path)
@@ -119,6 +132,23 @@ final class AppCoordinator {
     func start() {
         applyAppearance()
         Log.coordinator.info("coordinator starting")
+
+        // If the encryption key changed since data was written (the re-signed /
+        // stale-binary trap), previously-stored image blobs can no longer be
+        // decrypted and would render as blank cards forever. Prune them, and
+        // tell the user once why their old images disappeared.
+        do {
+            let pruned = try store.pruneUndecryptableImages(blobStore: blobStore)
+            if pruned > 0 {
+                Log.coordinator.error("pruned \(pruned, privacy: .public) undecryptable image item(s)")
+            }
+            if DatabaseKey.didDetectKeyMismatch {
+                surfaceKeyMismatch(prunedCount: pruned)
+            }
+        } catch {
+            Log.coordinator.error("prune undecryptable images failed: \(error.localizedDescription, privacy: .public)")
+        }
+
         hotkey.start()
         monitor.start()
         screenshotImporter.start()

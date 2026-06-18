@@ -141,9 +141,19 @@ struct ClipboardCard: View {
                     .aspectRatio(contentMode: .fill)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Rectangle()
-                    .fill(LinearGradient(colors: [.gray.opacity(0.4), .gray.opacity(0.2)],
-                                          startPoint: .topLeading, endPoint: .bottomTrailing))
+                ZStack {
+                    Rectangle()
+                        .fill(LinearGradient(colors: [.gray.opacity(0.4), .gray.opacity(0.2)],
+                                              startPoint: .topLeading, endPoint: .bottomTrailing))
+                    VStack(spacing: 6) {
+                        Image(systemName: "photo.badge.exclamationmark")
+                            .font(.system(size: 28, weight: .light))
+                        Text("Image unavailable")
+                            .font(DesignTypography.cardFooterTime)
+                    }
+                    .foregroundStyle(.white.opacity(0.7))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             if let dims = item.dimensions {
                 Text(dims)

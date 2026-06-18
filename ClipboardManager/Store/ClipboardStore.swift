@@ -401,6 +401,37 @@ final class ClipboardStore: @unchecked Sendable {
         }
     }
 
+    /// Hard-deletes image rows whose blob can no longer be read or decrypted
+    /// (e.g. orphaned by a key mismatch from a re-signed/stale binary, or a
+    /// corrupt/missing file). Such rows can only ever render as a blank
+    /// placeholder, so they are removed along with their on-disk blob. Returns
+    /// the number of rows pruned. Best-effort per row; a row that reads fine is
+    /// left untouched.
+    @discardableResult
+    func pruneUndecryptableImages(blobStore: BlobStore) throws -> Int {
+        let images = try queue.read { db in
+            try Item
+                .filter(Item.Columns.kind == "image" && Item.Columns.deletedAt == nil)
+                .fetchAll(db)
+        }
+        var pruned = 0
+        for item in images {
+            guard let id = item.id, let path = item.blobPath else { continue }
+            do {
+                _ = try blobStore.read(relativePath: path)
+            } catch {
+                Log.app.error("pruning undecryptable image row \(id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                _ = try? queue.write { db in
+                    try Item.filter(Item.Columns.id == id).deleteAll(db)
+                }
+                try? blobStore.delete(relativePath: path)
+                pruned += 1
+            }
+        }
+        if pruned > 0 { postChange() }
+        return pruned
+    }
+
     // MARK: - Soft delete
 
     /// Soft-deletes an item and, if it owns an image blob that no other live row

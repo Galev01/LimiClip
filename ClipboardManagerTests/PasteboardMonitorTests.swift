@@ -369,6 +369,40 @@ final class PasteboardMonitorTests: XCTestCase {
         XCTAssertEqual(try store.recentItems(limit: 5).map(\.body), ["after pause real copy"])
     }
 
+    // MARK: - Transient empty read retry (first ⌘C not lost)
+
+    func test_emptyPasteboardReadDoesNotBurnChangeCount() async throws {
+        monitor = PasteboardMonitor(pasteboard: pasteboard, store: store, frontmostApp: { (nil, nil) })
+        monitor.tickForTesting()  // baseline snapshot
+
+        // App bumped changeCount (declaring a type) but data not yet written —
+        // a transient empty read. declareTypes bumps changeCount once.
+        pasteboard.declareTypes([.string], owner: nil)
+        monitor.tickForTesting()
+        XCTAssertEqual(try store.recentItems(limit: 10).count, 0)
+
+        // Data arrives on the next poll for the SAME change count. Writing a
+        // value for an already-declared type does not bump changeCount.
+        pasteboard.setString("hello", forType: .string)
+        monitor.tickForTesting()
+        let items = try store.recentItems(limit: 10)
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items.first?.body, "hello")
+    }
+
+    func test_persistentlyEmptyChangeCountGivesUpAfterRetryBudget() async throws {
+        monitor = PasteboardMonitor(pasteboard: pasteboard, store: store, frontmostApp: { (nil, nil) })
+        monitor.tickForTesting()  // baseline
+
+        pasteboard.declareTypes([.string], owner: nil)
+        // Budget is 3 empty retries; tick more than that.
+        for _ in 0..<6 { monitor.tickForTesting() }
+        // Now content appears for the SAME changeCount — already given up, so ignored.
+        pasteboard.setString("late", forType: .string)
+        monitor.tickForTesting()
+        XCTAssertEqual(try store.recentItems(limit: 10).count, 0)
+    }
+
     func testUnpausedMonitorRecordsScreenshotImage() async throws {
         let blobs = try BlobStore(rootDirectory: URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("monitor-tests-\(UUID().uuidString)", isDirectory: true))

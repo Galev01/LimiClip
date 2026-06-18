@@ -19,9 +19,15 @@ final class PasteboardMonitor {
     private let frontmostApp: FrontmostAppProvider
     private let settings: () -> Settings
 
+    private enum RouteOutcome { case handled, empty }
+
+    static let maxEmptyRetries = 3
+
     private var timer: Timer?
     private var lastChangeCount: Int = -1
     private var pausedUntil: Date = .distantPast
+    private var pendingChangeCount: Int = -1
+    private var pendingAttempts: Int = 0
 
     private static let concealedTypes: Set<NSPasteboard.PasteboardType> = [
         NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"),
@@ -90,28 +96,44 @@ final class PasteboardMonitor {
 
     private func tick() {
         let current = pasteboard.changeCount
-        defer { lastChangeCount = current }
         guard current != lastChangeCount else { return }
         guard Date() >= pausedUntil else {
             Log.app.debug("monitor paused, skipping change")
+            lastChangeCount = current
             return
         }
-        route()
+        // Track retry budget per change count.
+        if current != pendingChangeCount {
+            pendingChangeCount = current
+            pendingAttempts = 0
+        }
+        pendingAttempts += 1
+
+        switch route() {
+        case .handled:
+            lastChangeCount = current
+        case .empty:
+            if pendingAttempts >= Self.maxEmptyRetries {
+                // Genuinely empty / unreadable — give up, don't reprocess forever.
+                lastChangeCount = current
+            }
+            // else: leave lastChangeCount unchanged so the next poll re-reads.
+        }
     }
 
     /// Decide what kind of item this pasteboard change represents and hand
     /// off to the appropriate capture method.
-    private func route() {
+    private func route() -> RouteOutcome {
         if let types = pasteboard.types, !Set(types).isDisjoint(with: Self.concealedTypes) {
             Log.app.info("skipping concealed pasteboard item")
-            return
+            return .handled
         }
         let (appName, bundleId) = frontmostApp()
 
         // Strict capture: fail CLOSED when the source app can't be identified.
         if bundleId == nil, settings().strictCaptureMode {
             Log.app.info("strict capture: skipping clipboard change with unknown source app")
-            return
+            return .handled
         }
 
         // 1. File URLs win.
@@ -119,14 +141,14 @@ final class PasteboardMonitor {
             let fileURLs = urls.filter { $0.isFileURL }
             if let first = fileURLs.first {
                 captureFile(url: first, appName: appName, bundleId: bundleId)
-                return
+                return .handled
             }
         }
 
         // 2. Image types next.
         if let imageType = pickImageType(), let data = pasteboard.data(forType: imageType) {
             captureImage(data: data, appName: appName, bundleId: bundleId)
-            return
+            return .handled
         }
 
         // 3. Plain text.
@@ -136,7 +158,11 @@ final class PasteboardMonitor {
             } catch {
                 Log.app.error("text record failed: \(error.localizedDescription, privacy: .public)")
             }
+            return .handled
         }
+
+        // No recognized content yet — likely a transient empty read.
+        return .empty
     }
 
     private func pickImageType() -> NSPasteboard.PasteboardType? {

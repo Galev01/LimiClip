@@ -180,6 +180,7 @@ struct ImageAnnotationView: View {
     @State private var pendingTextPoint: CGPoint?
     @State private var pendingText: String = ""
     @State private var showingTextEntry = false
+    @State private var keyMonitor: Any?
 
     private var colorHex: String { color.toHex() ?? "#FF3B30" }
 
@@ -202,12 +203,41 @@ struct ImageAnnotationView: View {
             )
             .padding(8)
         }
-        .frame(minWidth: 480, minHeight: 360)
+        .frame(minWidth: 360, minHeight: 280)
+        .background(VisualEffectBackground(material: .hudWindow))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.12)))
+        .onAppear { installKeyMonitor() }
+        .onDisappear { removeKeyMonitor() }
         .alert("Add Text", isPresented: $showingTextEntry) {
             TextField("Text", text: $pendingText)
             Button("Cancel", role: .cancel) { pendingTextPoint = nil }
             Button("Add") { commitText() }
         }
+    }
+
+    /// The app is headless (no main menu) and the editor floats in a borderless
+    /// panel, so SwiftUI `.keyboardShortcut` does not reliably resolve. Catch
+    /// the editor's shortcuts with a local key monitor while it's on screen.
+    private func installKeyMonitor() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // While the text-entry alert is up, let the field handle keys.
+            if showingTextEntry { return event }
+            let mods = event.modifierFlags
+            let cmd = mods.contains(.command)
+            let shift = mods.contains(.shift)
+            let key = event.charactersIgnoringModifiers?.lowercased()
+            if event.keyCode == 53 { onClose(); return nil }            // Esc
+            if cmd, !shift, key == "c" { flattenThenCallback(onCopy); return nil }
+            if cmd, !shift, key == "s" { flattenThenCallback(onSaveToFolder); return nil }
+            if cmd, shift, key == "s" { flattenThenCallback(onSaveToHistory); return nil }
+            return event
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
     }
 
     private var toolbar: some View {

@@ -122,17 +122,24 @@ final class AppCoordinator {
             },
             onClose: { [weak self] in self?.annotationWindow?.close(); self?.annotationWindow = nil }
         )
-        let hosting = NSHostingController(rootView: view)
-        let window = NSWindow(contentViewController: hosting)
-        window.title = "Annotate Image"
-        window.styleMask = [.titled, .closable, .resizable]
-        window.setContentSize(NSSize(width: 720, height: 560))
-        window.center()
-        let wc = NSWindowController(window: window)
-        wc.showWindow(nil)
-        window.makeKeyAndOrderFront(nil)
+        let panel = AnnotationPanel(content: view, size: Self.annotationPanelSize(for: nsImage))
+        panel.center()
+        panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        annotationWindow = window
+        annotationWindow = panel
+    }
+
+    /// Panel size that fits the image (aspect-preserving) within sane bounds,
+    /// plus room for the toolbar/divider and the canvas padding.
+    static func annotationPanelSize(for image: NSImage) -> NSSize {
+        let maxImageW: CGFloat = 680, maxImageH: CGFloat = 440
+        let aspect = image.size.width > 0 && image.size.height > 0
+            ? image.size.width / image.size.height : 1.4
+        var w = maxImageW
+        var h = w / aspect
+        if h > maxImageH { h = maxImageH; w = h * aspect }
+        let toolbarAndChrome: CGFloat = 60   // toolbar + divider + paddings
+        return NSSize(width: max(w, 360) + 16, height: max(h, 240) + toolbarAndChrome)
     }
 
     func start() {

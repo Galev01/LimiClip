@@ -50,18 +50,26 @@ struct SelectionOverlayView: View {
     @State private var selRect: CGRect = .zero
     @State private var keyMonitor: Any?
 
-    private let space = "select"
     private var hasSelection: Bool { selRect.width > 1 && selRect.height > 1 }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            // Light dim over the LIVE screen, cut out the selection.
-            Canvas { ctx, size in
-                var path = Path(CGRect(origin: .zero, size: size))
-                if hasSelection { path.addRect(selRect) }
-                ctx.fill(path, with: .color(.black.opacity(0.30)), style: FillStyle(eoFill: true))
-            }
-            .allowsHitTesting(false)
+            // A real (semi-opaque) dim layer with the selection masked out. This
+            // also gives the otherwise-transparent window real pixels so AppKit
+            // actually delivers mouse events to it. The drag gesture lives on the
+            // root (below) via contentShape so the whole screen is selectable.
+            Rectangle()
+                .fill(Color.black.opacity(0.30))
+                .mask(
+                    Canvas { ctx, size in
+                        ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
+                        if hasSelection {
+                            ctx.blendMode = .clear
+                            ctx.fill(Path(selRect), with: .color(.white))
+                        }
+                    }
+                )
+                .allowsHitTesting(false)
 
             if hasSelection {
                 Rectangle()
@@ -70,21 +78,6 @@ struct SelectionOverlayView: View {
                     .offset(x: selRect.minX, y: selRect.minY)
                     .allowsHitTesting(false)
             }
-
-            Color.clear.contentShape(Rectangle())
-                .frame(width: viewSize.width, height: viewSize.height)
-                .gesture(
-                    DragGesture(minimumDistance: 0, coordinateSpace: .named(space))
-                        .onChanged { v in
-                            let s = selStart ?? v.startLocation
-                            selStart = s
-                            selRect = rect(s, v.location).intersection(CGRect(origin: .zero, size: viewSize))
-                        }
-                        .onEnded { _ in
-                            if hasSelection { onSelected(selRect) }
-                            else { selRect = .zero; selStart = nil }
-                        }
-                )
 
             if !hasSelection {
                 Text("Drag to select an area  ·  Esc to cancel")
@@ -97,7 +90,19 @@ struct SelectionOverlayView: View {
             }
         }
         .frame(width: viewSize.width, height: viewSize.height)
-        .coordinateSpace(name: space)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { v in
+                    let s = selStart ?? v.startLocation
+                    selStart = s
+                    selRect = rect(s, v.location).intersection(CGRect(origin: .zero, size: viewSize))
+                }
+                .onEnded { _ in
+                    if hasSelection { onSelected(selRect) }
+                    else { selRect = .zero; selStart = nil }
+                }
+        )
         .onAppear {
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
                 if e.keyCode == 53 { onCancel(); return nil }   // Esc

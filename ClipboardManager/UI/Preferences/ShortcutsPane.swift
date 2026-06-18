@@ -14,6 +14,13 @@ struct ShortcutsPane: View {
                 KeyboardShortcuts.Recorder("Open Compact Popup", name: .toggleCompactPopup)
             }
 
+            Section("Chain Copy") {
+                KeyboardShortcuts.Recorder("Append Selection to Clipboard", name: .chainCopyAppend)
+                Text("Copies the selected text and adds it after the current clipboard text, separated by a space.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
             Section {
                 Text("Click a shortcut and press the keys you want. Click the × to clear.")
                     .font(.system(size: 11))

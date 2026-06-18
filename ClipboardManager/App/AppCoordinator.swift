@@ -68,7 +68,10 @@ final class AppCoordinator {
 
         drawer.onAnnotate = { [weak self] item in self?.presentAnnotation(for: item) }
         hotkey.onScreenshot = { [weak self] in self?.presentScreenFreeze() }
+        hotkey.onChainCopy = { [weak self] in self?.chainCopy.perform() }
     }
+
+    private let chainCopy = ChainCopyService()
 
     /// One-time alert explaining that the encryption key changed so older
     /// encrypted images could not be recovered and were removed.

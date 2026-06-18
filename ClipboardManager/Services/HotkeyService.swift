@@ -15,6 +15,11 @@ extension KeyboardShortcuts.Name {
     /// Global shortcut that opens the compact cursor-adjacent popup.
     /// Ships with no default — user assigns in Preferences → Shortcuts.
     static let toggleCompactPopup = Self("toggleCompactPopup")
+
+    /// Global shortcut that copies the current selection and APPENDS it to the
+    /// clipboard text (space-separated) instead of replacing it. Ships with no
+    /// default — user assigns in Preferences → Shortcuts.
+    static let chainCopyAppend = Self("chainCopyAppend")
 }
 
 @MainActor
@@ -23,6 +28,8 @@ final class HotkeyService {
     /// Assignable after construction so the coordinator can wire it once `self`
     /// is fully initialized (the handler fires later, in `start()`).
     var onScreenshot: @MainActor () -> Void
+    /// Assignable after construction (see `onScreenshot`).
+    var onChainCopy: @MainActor () -> Void = { }
     private let onCompactToggle: @MainActor () -> Void
 
     init(
@@ -47,6 +54,10 @@ final class HotkeyService {
         KeyboardShortcuts.onKeyDown(for: .toggleCompactPopup) { [weak self] in
             Log.hotkey.info("toggleCompactPopup fired")
             self?.onCompactToggle()
+        }
+        KeyboardShortcuts.onKeyDown(for: .chainCopyAppend) { [weak self] in
+            Log.hotkey.info("chainCopyAppend fired")
+            self?.onChainCopy()
         }
     }
 

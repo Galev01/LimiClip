@@ -56,6 +56,14 @@ final class SelectionOverlayNSView: NSView {
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    /// Show a crosshair over the whole overlay so it's obvious we're in capture
+    /// mode (matches the native screenshot cursor). Auto-reverts when the
+    /// overlay closes (the cursor rect goes away with the view).
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .crosshair)
+    }
+
     private var selRect: CGRect {
         guard let s = start, let c = current else { return .zero }
         return CGRect(x: min(s.x, c.x), y: min(s.y, c.y), width: abs(s.x - c.x), height: abs(s.y - c.y))
@@ -63,12 +71,14 @@ final class SelectionOverlayNSView: NSView {
 
     override func mouseDown(with e: NSEvent) {
         Log.app.info("screen freeze: selection mouseDown")
+        NSCursor.crosshair.set()
         start = convert(e.locationInWindow, from: nil)
         current = start
         needsDisplay = true
     }
 
     override func mouseDragged(with e: NSEvent) {
+        NSCursor.crosshair.set()
         current = convert(e.locationInWindow, from: nil)
         needsDisplay = true
     }
@@ -87,6 +97,7 @@ final class SelectionOverlayNSView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window != nil, keyMonitor == nil {
+            NSCursor.crosshair.set()
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
                 if e.keyCode == 53 { self?.onCancel?(); return nil }   // Esc
                 return e

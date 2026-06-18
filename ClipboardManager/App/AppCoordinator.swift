@@ -146,11 +146,31 @@ final class AppCoordinator {
     /// full-screen overlay, let the user select a region and draw on it, then
     /// copy / save / store the annotated crop.
     func presentScreenFreeze() {
-        guard screenFreezeWindow == nil else { return }   // already up
+        guard screenFreezeWindow == nil, let screen = NSScreen.main else { return }
+        // Phase 1: live region selection (screen is NOT frozen yet).
+        let selection = SelectionOverlayView(
+            viewSize: screen.frame.size,
+            onSelected: { [weak self] rect in self?.captureAndAnnotate(selection: rect, screen: screen) },
+            onCancel: { [weak self] in self?.dismissScreenFreeze() }
+        )
+        let window = makeFreezeWindow(screen: screen, rootView: selection)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        screenFreezeWindow = window
+    }
+
+    /// Phase 2: hide the selection overlay (so it's not in the shot), capture
+    /// the now-live screen, then present the in-place annotation overlay on the
+    /// frozen capture for the chosen region.
+    private func captureAndAnnotate(selection: CGRect, screen: NSScreen) {
+        screenFreezeWindow?.orderOut(nil)
+        screenFreezeWindow = nil
         Task { @MainActor [weak self] in
             guard let self else { return }
+            // Let the overlay fully leave the screen before the grab.
+            try? await Task.sleep(nanoseconds: 60_000_000)
             let data = await ScreenCapturer.captureMainDisplayPNG()
-            guard let data, let image = NSImage(data: data), let screen = NSScreen.main else {
+            guard let data, let image = NSImage(data: data) else {
                 Log.coordinator.error("screen freeze: capture failed (Screen Recording permission?)")
                 return
             }
@@ -159,28 +179,37 @@ final class AppCoordinator {
                 full: image,
                 viewSize: screen.frame.size,
                 scale: screen.backingScaleFactor,
+                selRect: selection,
                 onCopy: outputs.copy,
                 onSaveToFolder: outputs.folder,
                 onSaveToHistory: outputs.history,
-                onClose: { [weak self] in
-                    self?.screenFreezeWindow?.orderOut(nil)
-                    self?.screenFreezeWindow = nil
-                }
+                onClose: { [weak self] in self?.dismissScreenFreeze() }
             )
-            let window = ScreenFreezeWindow(contentRect: screen.frame,
-                                            styleMask: [.borderless],
-                                            backing: .buffered, defer: false)
-            window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
-            window.isOpaque = false
-            window.backgroundColor = .clear
-            window.hasShadow = false
-            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-            window.setFrame(screen.frame, display: true)
-            window.contentView = NSHostingView(rootView: view)
+            let window = self.makeFreezeWindow(screen: screen, rootView: view)
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             self.screenFreezeWindow = window
         }
+    }
+
+    private func dismissScreenFreeze() {
+        screenFreezeWindow?.orderOut(nil)
+        screenFreezeWindow = nil
+    }
+
+    /// Builds a borderless, transparent, top-level overlay window covering `screen`.
+    private func makeFreezeWindow(screen: NSScreen, rootView: some View) -> NSWindow {
+        let window = ScreenFreezeWindow(contentRect: screen.frame,
+                                        styleMask: [.borderless],
+                                        backing: .buffered, defer: false)
+        window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = false
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        window.setFrame(screen.frame, display: true)
+        window.contentView = NSHostingView(rootView: rootView)
+        return window
     }
 
     /// Panel size that fits the image (aspect-preserving) within sane bounds,

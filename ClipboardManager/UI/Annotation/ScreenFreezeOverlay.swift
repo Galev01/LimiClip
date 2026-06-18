@@ -2,8 +2,8 @@
 import AppKit
 import SwiftUI
 
-/// Borderless, top-level window that covers a screen with its frozen capture.
-/// Key-capable so the editor's key monitor (⌘C / ⌘S / ⌘⇧S / Esc) works.
+/// Borderless, top-level window that covers a screen. Key-capable so the
+/// editor's key monitor (⌘C / ⌘S / ⌘⇧S / Esc) works.
 final class ScreenFreezeWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
@@ -36,23 +36,96 @@ enum ScreenFreezeFlatten {
     }
 }
 
-/// The iShot-style overlay content: the frozen screen, a dim layer with the
-/// selection cut out, region selection, then in-place annotation with a tool
-/// drawer docked to the selection.
+// MARK: - Phase 1: live region selection (screen NOT yet frozen)
+
+/// A transparent full-screen overlay that dims the live screen and lets the
+/// user drag-select a region. On mouse-up it reports the region (view points);
+/// the screen is captured only afterwards, by the caller.
+struct SelectionOverlayView: View {
+    let viewSize: CGSize
+    var onSelected: (CGRect) -> Void
+    var onCancel: () -> Void
+
+    @State private var selStart: CGPoint?
+    @State private var selRect: CGRect = .zero
+    @State private var keyMonitor: Any?
+
+    private let space = "select"
+    private var hasSelection: Bool { selRect.width > 1 && selRect.height > 1 }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            // Light dim over the LIVE screen, cut out the selection.
+            Canvas { ctx, size in
+                var path = Path(CGRect(origin: .zero, size: size))
+                if hasSelection { path.addRect(selRect) }
+                ctx.fill(path, with: .color(.black.opacity(0.30)), style: FillStyle(eoFill: true))
+            }
+            .allowsHitTesting(false)
+
+            if hasSelection {
+                Rectangle()
+                    .strokeBorder(Color.white.opacity(0.9), lineWidth: 1.5)
+                    .frame(width: selRect.width, height: selRect.height)
+                    .offset(x: selRect.minX, y: selRect.minY)
+                    .allowsHitTesting(false)
+            }
+
+            Color.clear.contentShape(Rectangle())
+                .frame(width: viewSize.width, height: viewSize.height)
+                .gesture(
+                    DragGesture(minimumDistance: 0, coordinateSpace: .named(space))
+                        .onChanged { v in
+                            let s = selStart ?? v.startLocation
+                            selStart = s
+                            selRect = rect(s, v.location).intersection(CGRect(origin: .zero, size: viewSize))
+                        }
+                        .onEnded { _ in
+                            if hasSelection { onSelected(selRect) }
+                            else { selRect = .zero; selStart = nil }
+                        }
+                )
+
+            if !hasSelection {
+                Text("Drag to select an area  ·  Esc to cancel")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .position(x: viewSize.width / 2, y: 44)
+                    .allowsHitTesting(false)
+            }
+        }
+        .frame(width: viewSize.width, height: viewSize.height)
+        .coordinateSpace(name: space)
+        .onAppear {
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
+                if e.keyCode == 53 { onCancel(); return nil }   // Esc
+                return e
+            }
+        }
+        .onDisappear { if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil } }
+    }
+
+    private func rect(_ a: CGPoint, _ b: CGPoint) -> CGRect {
+        CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
+    }
+}
+
+// MARK: - Phase 2: annotate the frozen region in place
+
+/// Shows the frozen full-screen capture dimmed except for the chosen region,
+/// lets the user draw on that region, and docks a tool drawer to it.
 struct ScreenFreezeView: View {
     let full: NSImage
     let viewSize: CGSize     // screen size in points
     let scale: CGFloat       // backing scale factor
+    let selRect: CGRect      // selected region, view points
     var onCopy: (Data) -> Void
     var onSaveToFolder: (Data) -> Void
     var onSaveToHistory: (Data) -> Void
     var onClose: () -> Void
 
-    private enum Phase { case selecting, annotating }
-
-    @State private var phase: Phase = .selecting
-    @State private var selStart: CGPoint?
-    @State private var selRect: CGRect = .zero
     @State private var annotations: [Annotation] = []
     @State private var draft: Annotation?
     @State private var tool: AnnotationTool = .pen
@@ -65,7 +138,6 @@ struct ScreenFreezeView: View {
 
     private let space = "freeze"
     private var colorHex: String { color.toHex() ?? "#FF3B30" }
-    private var hasSelection: Bool { selRect.width > 1 && selRect.height > 1 }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -73,57 +145,34 @@ struct ScreenFreezeView: View {
                 .resizable()
                 .frame(width: viewSize.width, height: viewSize.height)
 
-            // Dim everything, cut out the selection (even-odd fill).
+            // Dim everything except the selection.
             Canvas { ctx, size in
                 var path = Path(CGRect(origin: .zero, size: size))
-                if hasSelection { path.addRect(selRect) }
+                path.addRect(selRect)
                 ctx.fill(path, with: .color(.black.opacity(0.35)), style: FillStyle(eoFill: true))
             }
             .allowsHitTesting(false)
 
-            if hasSelection {
-                Rectangle()
-                    .strokeBorder(Color.white.opacity(0.9), lineWidth: 1.5)
-                    .frame(width: selRect.width, height: selRect.height)
-                    .offset(x: selRect.minX, y: selRect.minY)
-                    .allowsHitTesting(false)
-            }
-
-            if phase == .annotating {
-                Canvas { ctx, _ in
-                    for a in annotations { draw(a, in: &ctx) }
-                    if let draft { draw(draft, in: &ctx) }
-                }
-                .frame(width: viewSize.width, height: viewSize.height)
+            Rectangle()
+                .strokeBorder(Color.white.opacity(0.9), lineWidth: 1.5)
+                .frame(width: selRect.width, height: selRect.height)
+                .offset(x: selRect.minX, y: selRect.minY)
                 .allowsHitTesting(false)
-            }
 
-            // Gesture layer: whole view while selecting, only the selection
-            // while annotating (so the docked drawer stays clickable).
-            if phase == .selecting {
-                Color.clear.contentShape(Rectangle())
-                    .frame(width: viewSize.width, height: viewSize.height)
-                    .gesture(selectionDrag)
-            } else {
-                Color.clear.contentShape(Rectangle())
-                    .frame(width: selRect.width, height: selRect.height)
-                    .offset(x: selRect.minX, y: selRect.minY)
-                    .gesture(annotationDrag)
+            Canvas { ctx, _ in
+                for a in annotations { draw(a, in: &ctx) }
+                if let draft { draw(draft, in: &ctx) }
             }
+            .frame(width: viewSize.width, height: viewSize.height)
+            .allowsHitTesting(false)
 
-            if phase == .annotating {
-                toolDrawer.position(drawerPosition())
-            }
+            // Drawing gesture layer, only over the selection.
+            Color.clear.contentShape(Rectangle())
+                .frame(width: selRect.width, height: selRect.height)
+                .offset(x: selRect.minX, y: selRect.minY)
+                .gesture(annotationDrag)
 
-            if phase == .selecting && !hasSelection {
-                Text("Drag to select an area  ·  Esc to cancel")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(.black.opacity(0.55), in: Capsule())
-                    .position(x: viewSize.width / 2, y: 44)
-                    .allowsHitTesting(false)
-            }
+            toolDrawer.position(drawerPosition())
         }
         .frame(width: viewSize.width, height: viewSize.height)
         .coordinateSpace(name: space)
@@ -136,19 +185,7 @@ struct ScreenFreezeView: View {
         }
     }
 
-    // MARK: - Gestures
-
-    private var selectionDrag: some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .named(space))
-            .onChanged { v in
-                let s = selStart ?? v.startLocation
-                selStart = s
-                selRect = rect(s, v.location).intersection(CGRect(origin: .zero, size: viewSize))
-            }
-            .onEnded { _ in
-                if hasSelection { phase = .annotating } else { selRect = .zero; selStart = nil }
-            }
-    }
+    // MARK: - Gesture
 
     private var annotationDrag: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named(space))
@@ -249,7 +286,6 @@ struct ScreenFreezeView: View {
             let shift = event.modifierFlags.contains(.shift)
             let key = event.charactersIgnoringModifiers?.lowercased()
             if event.keyCode == 53 { onClose(); return nil }                       // Esc
-            guard phase == .annotating else { return event }
             if cmd, !shift, key == "z" { if !annotations.isEmpty { annotations.removeLast() }; return nil }
             if cmd, !shift, key == "c" { finish(onCopy); return nil }
             if cmd, !shift, key == "s" { finish(onSaveToFolder); return nil }

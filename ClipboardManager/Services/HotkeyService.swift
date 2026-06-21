@@ -20,6 +20,11 @@ extension KeyboardShortcuts.Name {
     /// clipboard text (space-separated) instead of replacing it. Ships with no
     /// default — user assigns in Preferences → Shortcuts.
     static let chainCopyAppend = Self("chainCopyAppend")
+
+    /// Global shortcut that starts a screen recording (or stops the one in
+    /// progress — the coordinator treats it as a toggle). Ships with no default
+    /// — user assigns in Preferences → Shortcuts.
+    static let startRecording = Self("startRecording")
 }
 
 @MainActor
@@ -30,6 +35,9 @@ final class HotkeyService {
     var onScreenshot: @MainActor () -> Void
     /// Assignable after construction (see `onScreenshot`).
     var onChainCopy: @MainActor () -> Void = { }
+    /// Assignable after construction (see `onScreenshot`). Fires for the
+    /// start/stop-recording shortcut; the coordinator toggles recording.
+    var onStartRecording: @MainActor () -> Void = { }
     private let onCompactToggle: @MainActor () -> Void
 
     init(
@@ -58,6 +66,10 @@ final class HotkeyService {
         KeyboardShortcuts.onKeyDown(for: .chainCopyAppend) { [weak self] in
             Log.hotkey.info("chainCopyAppend fired")
             self?.onChainCopy()
+        }
+        KeyboardShortcuts.onKeyDown(for: .startRecording) { [weak self] in
+            Log.hotkey.info("startRecording fired")
+            self?.onStartRecording()
         }
     }
 

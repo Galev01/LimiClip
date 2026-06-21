@@ -10,22 +10,34 @@ final class MenuBarController: NSObject {
     private let onPause: @MainActor (PauseChoice) -> Void
     private let onResume: @MainActor () -> Void
     private let isPaused: @MainActor () -> Bool
+    /// Assignable after construction so the coordinator can wire it once `self`
+    /// is fully initialized (mirrors `HotkeyService.onScreenshot`). Toggles
+    /// recording start/stop.
+    var onToggleRecording: @MainActor () -> Void
+    /// Assignable after construction (see `onToggleRecording`). Reports whether
+    /// a recording is currently in progress, for the menu-item title.
+    var isRecording: @MainActor () -> Bool
 
     private var pauseItems: [NSMenuItem] = []
     private var resumeItem: NSMenuItem?
+    private var recordItem: NSMenuItem?
 
     init(
         onOpenClipboard: @escaping @MainActor () -> Void,
         onOpenPreferences: @escaping @MainActor () -> Void,
         onPause: @escaping @MainActor (PauseChoice) -> Void = { _ in },
         onResume: @escaping @MainActor () -> Void = {},
-        isPaused: @escaping @MainActor () -> Bool = { false }
+        isPaused: @escaping @MainActor () -> Bool = { false },
+        onToggleRecording: @escaping @MainActor () -> Void = {},
+        isRecording: @escaping @MainActor () -> Bool = { false }
     ) {
         self.onOpenClipboard = onOpenClipboard
         self.onOpenPreferences = onOpenPreferences
         self.onPause = onPause
         self.onResume = onResume
         self.isPaused = isPaused
+        self.onToggleRecording = onToggleRecording
+        self.isRecording = isRecording
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
         configure()
@@ -75,6 +87,14 @@ final class MenuBarController: NSObject {
 
         menu.addItem(.separator())
 
+        // Screen recording: a single toggle whose title reflects current state.
+        let record = NSMenuItem(title: "Record Screen", action: #selector(toggleRecordingClicked), keyEquivalent: "")
+        record.target = self
+        menu.addItem(record)
+        recordItem = record
+
+        menu.addItem(.separator())
+
         let quitItem = NSMenuItem(title: "Quit LimiClip", action: #selector(quitClicked), keyEquivalent: "q")
         quitItem.keyEquivalentModifierMask = [.command]
         quitItem.target = self
@@ -91,6 +111,7 @@ final class MenuBarController: NSObject {
         statusItem.button?.image = makeImage(symbol: PauseState.statusSymbolName(isPaused: paused))
         resumeItem?.isEnabled = paused
         pauseItems.forEach { $0.isEnabled = !paused }
+        recordItem?.title = isRecording() ? "Stop Recording" : "Record Screen"
     }
 
     @objc private func openClipboardClicked() {
@@ -107,6 +128,16 @@ final class MenuBarController: NSObject {
     @objc private func pause1hClicked() { onPause(.oneHour); refreshStatus() }
     @objc private func pauseUntilClicked() { onPause(.untilResumed); refreshStatus() }
     @objc private func resumeClicked() { onResume(); refreshStatus() }
+
+    @objc private func toggleRecordingClicked() {
+        Log.menuBar.info("menu: toggle recording")
+        onToggleRecording()
+        refreshStatus()
+    }
+
+    /// Called by the coordinator when recording state changes outside the menu
+    /// (e.g. the hotkey toggled it) so the menu-bar item title stays correct.
+    func refreshRecordingState() { refreshStatus() }
 
     @objc private func quitClicked() {
         Log.menuBar.info("menu: quit")

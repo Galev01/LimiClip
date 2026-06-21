@@ -10,6 +10,13 @@ final class AppCoordinator {
     private let settings = Settings()
     private var annotationWindow: NSWindow?
     private var screenFreezeWindow: NSWindow?
+
+    // Screen recording (plan Task 6).
+    private let recorder = ScreenRecorder()
+    private let recordingChooser = RecordingChooserPanel()
+    private let countdown = CountdownOverlay()
+    private var recordingSelectionWindow: NSWindow?
+    private var isRecording = false
     private let viewModel: ClipboardViewModel
     private let menuBar: MenuBarController
     private let drawer: DrawerWindowController
@@ -69,6 +76,9 @@ final class AppCoordinator {
         drawer.onAnnotate = { [weak self] item in self?.presentAnnotation(for: item) }
         hotkey.onScreenshot = { [weak self] in self?.presentScreenFreeze() }
         hotkey.onChainCopy = { [weak self] in self?.chainCopy.perform() }
+        hotkey.onStartRecording = { [weak self] in self?.toggleRecording() }
+        menuBar.onToggleRecording = { [weak self] in self?.toggleRecording() }
+        menuBar.isRecording = { [weak self] in self?.isRecording ?? false }
     }
 
     private let chainCopy = ChainCopyService()
@@ -211,6 +221,199 @@ final class AppCoordinator {
     private func dismissScreenFreeze() {
         screenFreezeWindow?.orderOut(nil)
         screenFreezeWindow = nil
+    }
+
+    // MARK: - Screen recording (plan Task 6)
+
+    /// The Start-Recording hotkey and the menu-bar item both route here: start a
+    /// new recording flow, or stop the one in progress. Never starts two at once.
+    func toggleRecording() {
+        if isRecording {
+            stopRecording()
+        } else {
+            beginRecordingFlow()
+        }
+    }
+
+    /// Step 1: show the Region / Full Screen / Cancel chooser on the screen under
+    /// the mouse. A choice advances to the region selection or straight to the
+    /// countdown; Cancel (or Esc) aborts cleanly.
+    private func beginRecordingFlow() {
+        guard !isRecording else { return }
+        let mouse = NSEvent.mouseLocation
+        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) ?? NSScreen.main
+        else { return }
+
+        recordingChooser.show { [weak self] choice in
+            guard let self else { return }
+            switch choice {
+            case .cancel:
+                Log.coordinator.info("recording cancelled at chooser")
+            case .fullScreen:
+                self.startCountdownThenRecord(globalRect: Self.fullScreenGlobalRect(for: screen), screen: screen)
+            case .region:
+                self.presentRecordingSelection(on: screen)
+            }
+        }
+    }
+
+    /// Region path: reuse the crosshair selection overlay (the same NSView the
+    /// screen-freeze flow uses). The selection is in top-left view points within
+    /// the target screen; we map it to the global top-left rect `screencapture`
+    /// expects, then proceed to the countdown.
+    private func presentRecordingSelection(on screen: NSScreen) {
+        let selectionView = SelectionOverlayNSView(frame: NSRect(origin: .zero, size: screen.frame.size))
+        selectionView.onSelected = { [weak self] rect in
+            guard let self else { return }
+            self.dismissRecordingSelection()
+            let global = Self.regionGlobalRect(selection: rect, screen: screen)
+            self.startCountdownThenRecord(globalRect: global, screen: screen)
+        }
+        selectionView.onCancel = { [weak self] in
+            self?.dismissRecordingSelection()
+            Log.coordinator.info("recording cancelled at selection")
+        }
+        let window = makeFreezeWindow(screen: screen)
+        window.contentView = selectionView
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(selectionView)
+        NSApp.activate(ignoringOtherApps: true)
+        recordingSelectionWindow = window
+    }
+
+    private func dismissRecordingSelection() {
+        recordingSelectionWindow?.orderOut(nil)
+        recordingSelectionWindow = nil
+    }
+
+    /// Step 3: the 3-2-1 countdown on the target screen, then launch the
+    /// recording. Esc during the countdown aborts without recording.
+    private func startCountdownThenRecord(globalRect: CGRect, screen: NSScreen) {
+        countdown.show(on: screen, from: 3, onDone: { [weak self] in
+            self?.launchRecording(globalRect: globalRect)
+        }, onCancel: {
+            Log.coordinator.info("recording cancelled at countdown")
+        })
+    }
+
+    /// Step 4: launch `screencapture` recording the chosen global rect to a temp
+    /// `.mov`. On finish (stop or process exit) the file is finalized,
+    /// moved into the Recordings folder, thumbnailed, and stored as a video item.
+    private func launchRecording(globalRect: CGRect) {
+        guard !isRecording else { return }
+        let temp = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("limiclip-recording-\(UUID().uuidString).mov")
+        let started = recorder.start(globalRect: globalRect,
+                                     audio: settings.recordAudio,
+                                     outputURL: temp) { [weak self] url in
+            self?.finishRecording(tempURL: url)
+        }
+        if started {
+            isRecording = true
+            menuBar.refreshRecordingState()
+            Log.coordinator.info("recording started")
+        } else {
+            Log.coordinator.error("recording failed to launch")
+        }
+    }
+
+    /// Stop the in-progress recording. The recorder interrupts `screencapture`,
+    /// which finalizes the `.mov` and fires the `onFinish` set in `launchRecording`.
+    private func stopRecording() {
+        guard isRecording else { return }
+        Log.coordinator.info("recording stop requested")
+        recorder.stop()
+    }
+
+    /// `onFinish` body: move the finalized `.mov` into the user's Recordings
+    /// folder, generate a first-frame thumbnail blob, and record a video item.
+    /// Clears recording state regardless of outcome. `tempURL` is nil if the
+    /// recording failed (launch error, non-zero exit, or missing output).
+    private func finishRecording(tempURL: URL?) {
+        isRecording = false
+        menuBar.refreshRecordingState()
+        guard let tempURL else {
+            Log.coordinator.error("recording produced no file")
+            return
+        }
+        let folder = RecordingFolder.resolve(bookmark: settings.recordingSaveBookmark)
+        let scoped = folder.startAccessingSecurityScopedResource()
+        let finalURL: URL
+        do {
+            finalURL = try RecordingFolder.moveIntoFolder(
+                tempURL, folder: folder,
+                timestamp: Int64(Date().timeIntervalSince1970))
+        } catch {
+            if scoped { folder.stopAccessingSecurityScopedResource() }
+            Log.coordinator.error("recording move failed: \(error.localizedDescription, privacy: .public)")
+            try? FileManager.default.removeItem(at: tempURL)
+            return
+        }
+        if scoped { folder.stopAccessingSecurityScopedResource() }
+        Log.coordinator.info("recording saved")
+
+        // Thumbnail + store happen off the main run loop's critical path but on
+        // the main actor (store/blobStore are main-actor types).
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.storeRecording(at: finalURL)
+        }
+    }
+
+    /// Builds the thumbnail (best-effort) and writes the video item.
+    private func storeRecording(at url: URL) async {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        let byteSize = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
+        let mtime = (attrs?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? Date().timeIntervalSince1970
+
+        let thumb = await VideoThumbnail.firstFrame(url: url)
+        var thumbnailBlobPath: String?
+        if let thumb {
+            do { thumbnailBlobPath = try blobStore.write(data: thumb.png, fileExtension: "png") }
+            catch { Log.coordinator.error("recording thumbnail write failed: \(error.localizedDescription, privacy: .public)") }
+        }
+
+        let reference = VideoReference(
+            path: url.path,
+            name: url.lastPathComponent,
+            byteSize: byteSize,
+            modifiedAt: Int64(mtime),
+            durationSeconds: thumb?.duration ?? 0,
+            width: Int(thumb?.size.width ?? 0),
+            height: Int(thumb?.size.height ?? 0)
+        )
+        do {
+            let recorded = try store.recordVideo(reference: reference,
+                                                 thumbnailBlobPath: thumbnailBlobPath,
+                                                 sourceApp: "Screen Recording")
+            // On a dedupe hit the new thumbnail isn't adopted; delete it (mirrors
+            // the recordImage cleanup in `annotationOutputs().history`).
+            if let blobPath = thumbnailBlobPath,
+               recorded == nil || (recorded!.blobPath != nil && recorded!.blobPath != blobPath) {
+                try? blobStore.delete(relativePath: blobPath)
+            }
+        } catch {
+            Log.coordinator.error("recordVideo failed: \(error.localizedDescription, privacy: .public)")
+            if let blobPath = thumbnailBlobPath { try? blobStore.delete(relativePath: blobPath) }
+        }
+    }
+
+    /// The whole screen as a global top-left rect for `screencapture -R`.
+    private static func fullScreenGlobalRect(for screen: NSScreen) -> CGRect {
+        let frame = screen.frame
+        let primaryHeight = NSScreen.screens.first(where: { $0.frame.origin == .zero })?.frame.height ?? frame.height
+        return ScreenCaptureGeometry.screencaptureRect(for: frame, primaryHeight: primaryHeight)
+    }
+
+    /// A selection rect (top-left view points within `screen`) as a global
+    /// top-left rect for `screencapture -R`: the screen's global origin plus the
+    /// selection's offset, with the selection's size.
+    private static func regionGlobalRect(selection: CGRect, screen: NSScreen) -> CGRect {
+        let screenGlobal = fullScreenGlobalRect(for: screen)
+        return CGRect(x: screenGlobal.minX + selection.minX,
+                      y: screenGlobal.minY + selection.minY,
+                      width: selection.width,
+                      height: selection.height)
     }
 
     /// Builds a borderless, transparent, top-level overlay window covering

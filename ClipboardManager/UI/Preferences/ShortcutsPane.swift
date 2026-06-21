@@ -21,6 +21,10 @@ struct ShortcutsPane: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("Screen Recording") {
+                KeyboardShortcuts.Recorder("Start / Stop Recording", name: .startRecording)
+            }
+
             Section {
                 Text("Click a shortcut and press the keys you want. Click the × to clear.")
                     .font(.system(size: 11))

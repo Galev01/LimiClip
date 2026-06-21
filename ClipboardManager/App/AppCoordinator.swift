@@ -217,12 +217,14 @@ final class AppCoordinator {
     /// `screen`. The caller sets `contentView`.
     private func makeFreezeWindow(screen: NSScreen) -> NSWindow {
         let window = ScreenFreezeWindow(contentRect: screen.frame,
-                                        styleMask: [.borderless],
+                                        styleMask: [.borderless, .nonactivatingPanel],
                                         backing: .buffered, defer: false)
+        window.isFloatingPanel = true
         window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = false
+        window.hidesOnDeactivate = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         window.setFrame(screen.frame, display: true)
         return window

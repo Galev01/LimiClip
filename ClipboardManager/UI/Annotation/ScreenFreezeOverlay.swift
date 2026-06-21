@@ -2,9 +2,11 @@
 import AppKit
 import SwiftUI
 
-/// Borderless, top-level window that covers a screen. Key-capable so the
-/// editor's key monitor (⌘C / ⌘S / ⌘⇧S / Esc) works.
-final class ScreenFreezeWindow: NSWindow {
+/// Borderless, top-level panel that covers a screen. A nonactivating *panel*
+/// (not a plain NSWindow) is used so it can become the key window — and thus
+/// receive keyboard events (⌘C / ⌘S / ⌘⇧S / Esc) — in this menu-bar-only app,
+/// the same pattern the clipboard drawer relies on.
+final class ScreenFreezeWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 }
@@ -288,6 +290,7 @@ struct ScreenFreezeView: View {
     }
 
     private func finish(_ callback: (Data) -> Void) {
+        Log.app.info("screen freeze: finish action")
         if let data = ScreenFreezeFlatten.flatten(full: full, selectionView: selRect,
                                                    scale: scale, annotations: annotations) {
             callback(data)

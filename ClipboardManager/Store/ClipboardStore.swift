@@ -366,6 +366,57 @@ final class ClipboardStore: @unchecked Sendable {
         return decrypt(result)
     }
 
+    /// Records a screen recording from a `VideoReference`. Dedupe is by path
+    /// (re-recording over the same path is a no-op that bumps createdAt). The
+    /// `.mov` lives in the user's Recordings folder — only `thumbnailBlobPath`
+    /// (a small first-frame PNG blob, may be nil) is owned by the blob store.
+    /// On a dedupe hit the existing thumbnail blob is kept and the new one is
+    /// NOT swapped in (caller should delete the unused new blob, like
+    /// `recordImage`). NO image-cap enforcement — videos are external files.
+    @discardableResult
+    func recordVideo(
+        reference: VideoReference,
+        thumbnailBlobPath: String?,
+        sourceApp: String?
+    ) throws -> Item? {
+        let now = Int64(Date().timeIntervalSince1970)
+        let hash = cipher.dedupHash(reference.path)
+        let sealedBody = try cipher.seal(try reference.encodedJSON())
+        let sealedApp = try sealOptional(sourceApp)
+        let dimsString = "\(reference.width)x\(reference.height)"
+
+        let result: Item = try queue.write { db in
+            if var existing = try Item
+                .filter(Item.Columns.contentHash == hash && Item.Columns.deletedAt == nil)
+                .fetchOne(db)
+            {
+                existing.createdAt = now
+                try existing.update(db)
+                return existing
+            }
+            var item = Item(
+                id: nil,
+                kind: "video",
+                subtype: nil,
+                contentHash: hash,
+                body: sealedBody,
+                blobPath: thumbnailBlobPath,
+                dimensions: dimsString,
+                byteSize: Int(reference.byteSize),
+                sourceApp: sealedApp,
+                sourceBundleId: nil,
+                createdAt: now,
+                pinned: false,
+                snippetId: nil,
+                deletedAt: nil
+            )
+            try item.insert(db)
+            return item
+        }
+        postChange()
+        return decrypt(result)
+    }
+
     // MARK: - Queries
 
     func countItems(includingDeleted: Bool = false) throws -> Int {

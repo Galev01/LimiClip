@@ -8,6 +8,7 @@ enum ItemKind: Sendable, Equatable {
     case text(TextSubtype)
     case image
     case file
+    case video
 }
 
 /// Persistable representation used by the database — strings rather than
@@ -20,6 +21,7 @@ extension ItemKind {
         case .text: return "text"
         case .image: return "image"
         case .file: return "file"
+        case .video: return "video"
         }
     }
 
@@ -28,7 +30,7 @@ extension ItemKind {
     var subtypeColumn: String? {
         switch self {
         case .text(let sub): return sub.rawValue
-        case .image, .file:  return nil
+        case .image, .file, .video:  return nil
         }
     }
 
@@ -40,6 +42,7 @@ extension ItemKind {
             return .text(sub)
         case "image":  return .image
         case "file":   return .file
+        case "video":  return .video
         default:       return nil
         }
     }

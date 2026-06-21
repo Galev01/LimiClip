@@ -156,6 +156,10 @@ struct ScreenFreezeView: View {
     @State private var pendingText: String = ""
     @State private var showingText = false
     @State private var keyMonitor: Any?
+    @State private var movingTextIndex: Int?
+    @State private var dragStartLocation: CGPoint?
+    @State private var didMoveText = false
+    @State private var editingTextIndex: Int?
 
     private let space = "freeze"
     private var colorHex: String { color.toHex() ?? "#FF3B30" }
@@ -201,7 +205,7 @@ struct ScreenFreezeView: View {
         .onDisappear { removeKeyMonitor() }
         .alert("Add Text", isPresented: $showingText) {
             TextField("Text", text: $pendingText)
-            Button("Cancel", role: .cancel) { pendingTextPoint = nil }
+            Button("Cancel", role: .cancel) { pendingTextPoint = nil; editingTextIndex = nil; pendingText = "" }
             Button("Add") { commitText() }
         }
     }
@@ -211,6 +215,31 @@ struct ScreenFreezeView: View {
     private var annotationDrag: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named(space))
             .onChanged { v in
+                // Drag begin: hit-test existing text labels when the Text tool
+                // is active, to distinguish move/edit from add.
+                if dragStartLocation == nil {
+                    dragStartLocation = v.location
+                    if tool == .text {
+                        let rects = annotations.map { a -> CGRect in
+                            a.tool == .text
+                                ? TextAnnotationHitTest.bounds(text: a.text,
+                                                               origin: a.points.first ?? .zero,
+                                                               fontSize: max(a.lineWidth * 4, 8))
+                                : .null
+                        }
+                        movingTextIndex = TextAnnotationHitTest.topmostIndex(rects: rects, containing: v.location)
+                    }
+                }
+
+                // Moving (or potentially tapping) an existing text label.
+                if let i = movingTextIndex {
+                    let start = dragStartLocation ?? v.location
+                    if hypot(v.location.x - start.x, v.location.y - start.y) > 4 { didMoveText = true }
+                    if didMoveText, i < annotations.count { annotations[i].points = [clamp(v.location)] }
+                    return
+                }
+
+                // Otherwise: pen/arrow/rectangle draw (text adds nothing here).
                 guard tool != .text else { return }
                 let p = clamp(v.location)
                 switch tool {
@@ -227,10 +256,27 @@ struct ScreenFreezeView: View {
                 }
             }
             .onEnded { v in
-                if tool == .text {
-                    pendingTextPoint = clamp(v.location); pendingText = ""; showingText = true
+                defer { movingTextIndex = nil; dragStartLocation = nil; didMoveText = false }
+
+                if let i = movingTextIndex {
+                    // Moved: commit happened during onChanged. Tapped: re-edit.
+                    if !didMoveText, i < annotations.count {
+                        editingTextIndex = i
+                        pendingText = annotations[i].text
+                        pendingTextPoint = nil
+                        showingText = true
+                    }
                     return
                 }
+
+                if tool == .text {
+                    pendingTextPoint = clamp(v.location)
+                    editingTextIndex = nil
+                    pendingText = ""
+                    showingText = true
+                    return
+                }
+
                 if let d = draft { annotations.append(d) }
                 draft = nil
             }
@@ -246,10 +292,21 @@ struct ScreenFreezeView: View {
     }
 
     private func commitText() {
-        guard let pt = pendingTextPoint, !pendingText.isEmpty else { pendingTextPoint = nil; return }
+        if let i = editingTextIndex {
+            if i < annotations.count {
+                if pendingText.isEmpty { annotations.remove(at: i) }
+                else { annotations[i].text = pendingText }
+            }
+            editingTextIndex = nil
+            pendingText = ""; pendingTextPoint = nil
+            return
+        }
+        guard let pt = pendingTextPoint, !pendingText.isEmpty else {
+            pendingText = ""; pendingTextPoint = nil; return
+        }
         annotations.append(Annotation(id: UUID(), tool: .text, points: [pt], text: pendingText,
                                       colorHex: colorHex, lineWidth: lineWidth))
-        pendingTextPoint = nil; pendingText = ""
+        pendingText = ""; pendingTextPoint = nil
     }
 
     // MARK: - Tool drawer

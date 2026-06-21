@@ -9,6 +9,8 @@ struct GeneralPane: View {
     @AppStorage(Settings.Key.compactMode) private var compactMode: Bool = false
     @AppStorage(Settings.Key.saveScreenshots) private var saveScreenshots: Bool = false
     @AppStorage(Settings.Key.annotationSaveFolder) private var annotationFolderData: Data?
+    @AppStorage(Settings.Key.recordingSaveFolder) private var recordingFolderData: Data?
+    @AppStorage(Settings.Key.recordAudio) private var recordAudio: Bool = false
 
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
 
@@ -89,6 +91,29 @@ struct GeneralPane: View {
                             annotationFolderData = data
                         }
                     }
+                }
+            }
+
+            Section("Recording") {
+                HStack {
+                    Text("Save folder")
+                    Spacer()
+                    Text(RecordingFolder.resolve(bookmark: recordingFolderData)
+                            .lastPathComponent)
+                        .foregroundStyle(.secondary)
+                    Button("Choose…") {
+                        let panel = NSOpenPanel()
+                        panel.canChooseDirectories = true
+                        panel.canChooseFiles = false
+                        panel.allowsMultipleSelection = false
+                        if panel.runModal() == .OK, let url = panel.url,
+                           let data = try? RecordingFolder.makeBookmark(for: url) {
+                            recordingFolderData = data
+                        }
+                    }
+                }
+                Toggle(isOn: $recordAudio) {
+                    Text("Record microphone audio")
                 }
             }
         }

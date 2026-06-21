@@ -46,6 +46,8 @@ struct Settings: @unchecked Sendable {
         static let saveScreenshots = "saveScreenshots"
         static let captureScreenshotFiles = "captureScreenshotFiles"
         static let annotationSaveFolder = "annotationSaveFolder"
+        static let recordingSaveFolder = "recordingSaveFolder"
+        static let recordAudio = "recordAudio"
     }
 
     let defaults: UserDefaults
@@ -131,6 +133,24 @@ struct Settings: @unchecked Sendable {
     var annotationSaveBookmark: Data? {
         get { defaults.data(forKey: Key.annotationSaveFolder) }
         nonmutating set { defaults.set(newValue, forKey: Key.annotationSaveFolder) }
+    }
+
+    /// Security-scoped bookmark to the folder where screen recordings are saved.
+    /// Nil when unset (callers fall back to ~/Movies).
+    var recordingSaveBookmark: Data? {
+        get { defaults.data(forKey: Key.recordingSaveFolder) }
+        nonmutating set { defaults.set(newValue, forKey: Key.recordingSaveFolder) }
+    }
+
+    /// When on, screen recordings include microphone audio (`screencapture -g`).
+    /// Default off (mirror `saveScreenshots`), so recordings are silent unless
+    /// the user opts in and grants the mic prompt.
+    var recordAudio: Bool {
+        get {
+            if defaults.object(forKey: Key.recordAudio) == nil { return false }
+            return defaults.bool(forKey: Key.recordAudio)
+        }
+        nonmutating set { defaults.set(newValue, forKey: Key.recordAudio) }
     }
 }
 

@@ -2,9 +2,28 @@ import XCTest
 @testable import ClipboardManager
 
 final class RecordingFolderTests: XCTestCase {
-    func test_resolveNilBookmarkFallsBackToMovies() {
+    func test_resolveNilBookmarkFallsBackToLimiClipRecordings() {
         let url = RecordingFolder.resolve(bookmark: nil)
-        XCTAssertTrue(url.path.contains("Movies"))
+        XCTAssertTrue(url.path.contains("Movies/LimiClip_Recordings"),
+                      "expected ~/Movies/LimiClip_Recordings, got \(url.path)")
+    }
+
+    func test_moveIntoFolderCreatesFolderIfMissing() throws {
+        let tmpDir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        // Destination folder does NOT exist yet.
+        let missingFolder = tmpDir.appendingPathComponent("LimiClip_Recordings", isDirectory: true)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: missingFolder.path))
+
+        let temp = tmpDir.appendingPathComponent("source.mov")
+        try Data([0x00, 0x01, 0x02]).write(to: temp)
+
+        let dest = try RecordingFolder.moveIntoFolder(temp, folder: missingFolder, timestamp: 1718000000)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.path))
+        XCTAssertTrue(dest.path.contains("LimiClip_Recordings"))
     }
 
     func test_moveIntoFolderProducesTimestampedMov() throws {

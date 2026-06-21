@@ -6,16 +6,18 @@ import Foundation
 /// Mirrors `AnnotationFolder` (security-scoped resolve, fallback).
 enum RecordingFolder {
 
-    /// The ~/Movies fallback used when no bookmark is set or it can't resolve.
-    private static var moviesFallback: URL {
+    /// The default folder used when no bookmark is set or it can't resolve:
+    /// ~/Movies/LimiClip_Recordings (created on first save by `moveIntoFolder`).
+    private static var defaultFolder: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Movies", isDirectory: true)
+            .appendingPathComponent("LimiClip_Recordings", isDirectory: true)
     }
 
     /// Resolves the saved security-scoped bookmark to a URL, or returns
-    /// ~/Movies when unset or stale/invalid.
+    /// ~/Movies/LimiClip_Recordings when unset or stale/invalid.
     static func resolve(bookmark: Data?) -> URL {
-        guard let bookmark else { return moviesFallback }
+        guard let bookmark else { return defaultFolder }
         var isStale = false
         do {
             let url = try URL(resolvingBookmarkData: bookmark,
@@ -24,7 +26,7 @@ enum RecordingFolder {
                               bookmarkDataIsStale: &isStale)
             return url
         } catch {
-            return moviesFallback
+            return defaultFolder
         }
     }
 
@@ -39,6 +41,9 @@ enum RecordingFolder {
     /// final URL. Caller wraps with `startAccessingSecurityScopedResource()` when
     /// using a resolved bookmark.
     static func moveIntoFolder(_ tempFile: URL, folder: URL, timestamp: Int64) throws -> URL {
+        // Create the destination folder if it doesn't exist yet (e.g. the
+        // default ~/Movies/LimiClip_Recordings on first save).
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let name = "recording-\(timestamp).mov"
         let dest = folder.appendingPathComponent(name)
         try FileManager.default.moveItem(at: tempFile, to: dest)

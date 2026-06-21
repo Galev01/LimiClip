@@ -2,7 +2,7 @@
 import Foundation
 
 enum DrawerTab: String, CaseIterable, Identifiable, Sendable {
-    case all, text, images, files, pinned
+    case all, text, images, files, videos, pinned
     var id: String { rawValue }
     var label: String {
         switch self {
@@ -10,6 +10,7 @@ enum DrawerTab: String, CaseIterable, Identifiable, Sendable {
         case .text: return "Text"
         case .images: return "Images"
         case .files: return "Files"
+        case .videos: return "Videos"
         case .pinned: return "Pinned"
         }
     }
@@ -70,6 +71,7 @@ final class ClipboardViewModel: ObservableObject {
         case .text:   list = list.filter { $0.kind == "text" }
         case .images: list = list.filter { $0.kind == "image" }
         case .files:  list = list.filter { $0.kind == "file" }
+        case .videos: list = list.filter { $0.kind == "video" }
         case .pinned: list = list.filter { $0.pinned }
         }
         let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()

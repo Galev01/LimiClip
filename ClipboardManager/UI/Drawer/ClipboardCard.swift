@@ -12,6 +12,7 @@ struct ClipboardCard: View {
     var onRevealInFinder: ((Item) -> Void)? = nil
     var onPin: ((Item, Bool) -> Void)? = nil
     var onAnnotate: ((Item) -> Void)? = nil
+    var onPlayVideo: ((Item) -> Void)? = nil
     @Environment(\.colorScheme) private var scheme
     @Environment(\.blobStore) private var blobStore
 
@@ -25,6 +26,7 @@ struct ClipboardCard: View {
     }
     private var isImage: Bool { item.kind == "image" }
     private var isFile: Bool { item.kind == "file" }
+    private var isVideo: Bool { item.kind == "video" }
 
     private var quickActions: [QuickAction] {
         guard item.kind == "text", item.subtype != TextSubtype.url.rawValue else { return [] }
@@ -72,7 +74,10 @@ struct ClipboardCard: View {
             if item.subtype == TextSubtype.url.rawValue {
                 Button("Open URL") { onOpenURL?(item) }
             }
-            if item.kind == "file" {
+            if isVideo {
+                Button("Play") { onPlayVideo?(item) }
+            }
+            if item.kind == "file" || isVideo {
                 Button("Reveal in Finder") { onRevealInFinder?(item) }
             }
             if item.kind == "image" {
@@ -123,11 +128,65 @@ struct ClipboardCard: View {
     private var content: some View {
         if isImage {
             imageContent
+        } else if isVideo {
+            videoContent
         } else if isFile {
             fileContent
         } else {
             textContent
         }
+    }
+
+    @ViewBuilder
+    private var videoContent: some View {
+        let ref = (try? VideoReference.decodingJSON(item.body))
+        ZStack {
+            // Thumbnail (first frame) if available; otherwise a film-strip
+            // gradient placeholder.
+            if let path = item.blobPath,
+               let blobStore,
+               let nsImage = ImageCache.shared.image(forKey: path, blobStore: blobStore, path: path) {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ZStack {
+                    Rectangle()
+                        .fill(LinearGradient(colors: [.gray.opacity(0.4), .gray.opacity(0.2)],
+                                              startPoint: .topLeading, endPoint: .bottomTrailing))
+                    Image(systemName: "film")
+                        .font(.system(size: 32, weight: .light))
+                        .foregroundStyle(.white.opacity(0.7))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+
+            // Centered play badge.
+            Image(systemName: "play.circle.fill")
+                .font(.system(size: 40, weight: .regular))
+                .foregroundStyle(.white.opacity(0.9))
+                .shadow(color: .black.opacity(0.4), radius: 4)
+
+            // Duration capsule (bottom-trailing) when the reference decodes.
+            if let ref {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Text(ref.formattedDuration)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.black.opacity(0.4))
+                            .clipShape(Capsule())
+                            .padding(8)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder

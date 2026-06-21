@@ -123,4 +123,28 @@ final class PasteInjectorTests: XCTestCase {
         let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL]
         XCTAssertEqual(urls?.first?.path, tmp.path)
     }
+
+    func test_videoWritesFileURL() throws {
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("paste-injector-\(UUID().uuidString).mov")
+        try Data("x".utf8).write(to: tmp)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let ref = VideoReference(path: tmp.path, name: tmp.lastPathComponent,
+                                 byteSize: 1, modifiedAt: 0,
+                                 durationSeconds: 5, width: 1920, height: 1080)
+        let body = try ref.encodedJSON()
+        let video = Item(
+            id: 4, kind: "video", subtype: nil, contentHash: "h",
+            body: body, blobPath: nil, dimensions: "1920x1080", byteSize: 1,
+            sourceApp: nil, sourceBundleId: nil,
+            createdAt: Int64(Date().timeIntervalSince1970),
+            pinned: false, snippetId: nil, deletedAt: nil
+        )
+        let injector = PasteInjector(pasteboard: pasteboard, blobStore: blobs)
+        try injector.writeToPasteboard(item: video)
+
+        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL]
+        XCTAssertEqual(urls?.first?.path, tmp.path)
+    }
 }

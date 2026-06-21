@@ -26,6 +26,7 @@ final class DrawerWindowController {
         var revealHandler: ((Item) -> Void)!
         var pinHandler: ((Item, Bool) -> Void)!
         var annotateHandler: ((Item) -> Void)!
+        var playVideoHandler: ((Item) -> Void)!
         var clearAllHandler: (() -> Void)!
 
         self.window = DrawerWindow(
@@ -37,6 +38,7 @@ final class DrawerWindowController {
             onRevealInFinder: { item in revealHandler(item) },
             onPin: { item, pinned in pinHandler(item, pinned) },
             onAnnotate: { item in annotateHandler(item) },
+            onPlayVideo: { item in playVideoHandler(item) },
             onClearAll: { clearAllHandler() },
             accessibilityCheck: { [injector] in injector.hasAccessibilityPermission }
         )
@@ -53,6 +55,7 @@ final class DrawerWindowController {
         revealHandler = { [weak self] item in self?.handleReveal(item: item) }
         pinHandler = { [weak self] item, pinned in self?.handlePin(item: item, pinned: pinned) }
         annotateHandler = { [weak self] item in self?.onAnnotate?(item) }
+        playVideoHandler = { [weak self] item in self?.handlePlayVideo(item: item) }
         clearAllHandler = { [weak self] in self?.handleClearAll() }
     }
 
@@ -183,10 +186,22 @@ final class DrawerWindowController {
         hide()
     }
 
+    private func handlePlayVideo(item: Item) {
+        guard item.kind == "video",
+              let ref = try? VideoReference.decodingJSON(item.body) else { return }
+        NSWorkspace.shared.open(URL(fileURLWithPath: ref.path))
+        hide()
+    }
+
     private func handleReveal(item: Item) {
-        guard item.kind == "file",
-              let ref = try? FileReference.decodingJSON(item.body) else { return }
-        let url = URL(fileURLWithPath: ref.path)
+        let path: String?
+        switch item.kind {
+        case "file":  path = (try? FileReference.decodingJSON(item.body))?.path
+        case "video": path = (try? VideoReference.decodingJSON(item.body))?.path
+        default:      path = nil
+        }
+        guard let path else { return }
+        let url = URL(fileURLWithPath: path)
         NSWorkspace.shared.activateFileViewerSelecting([url])
         hide()
     }

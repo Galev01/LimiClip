@@ -54,6 +54,10 @@ final class PasteInjector {
             let ref = try FileReference.decodingJSON(item.body)
             let url = URL(fileURLWithPath: ref.path)
             pasteboard.writeObjects([url as NSURL])
+        case "video":
+            let ref = try VideoReference.decodingJSON(item.body)
+            let url = URL(fileURLWithPath: ref.path)
+            pasteboard.writeObjects([url as NSURL])
         default:
             Log.app.error("unknown item kind for paste: \(item.kind, privacy: .public)")
         }

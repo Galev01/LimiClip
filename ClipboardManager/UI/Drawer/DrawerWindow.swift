@@ -18,6 +18,7 @@ final class DrawerWindow: NSPanel {
         onRevealInFinder: @escaping (Item) -> Void,
         onPin: @escaping (Item, Bool) -> Void,
         onAnnotate: @escaping (Item) -> Void,
+        onPlayVideo: @escaping (Item) -> Void,
         onClearAll: @escaping () -> Void,
         accessibilityCheck: @escaping () -> Bool = { true }
     ) {
@@ -49,6 +50,7 @@ final class DrawerWindow: NSPanel {
             onOpenURL: onOpenURL, onRevealInFinder: onRevealInFinder,
             onPin: onPin,
             onAnnotate: onAnnotate,
+            onPlayVideo: onPlayVideo,
             onClearAll: onClearAll,
             accessibilityCheck: accessibilityCheck
         ))

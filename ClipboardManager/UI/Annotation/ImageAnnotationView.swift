@@ -14,8 +14,14 @@ struct AnnotationCanvas: View {
     /// Called for the text tool: provides the base-space point of a tap so the
     /// host can prompt for a string.
     var onTextTap: (CGPoint) -> Void
+    /// Called when an existing text label is tapped (not moved): asks the host
+    /// to re-open the text prompt pre-filled for that annotation index.
+    var onEditText: (Int) -> Void
 
     @State private var draft: Annotation?
+    @State private var movingTextIndex: Int?
+    @State private var dragStartLocation: CGPoint?
+    @State private var didMoveText = false
 
     var body: some View {
         GeometryReader { geo in
@@ -50,6 +56,33 @@ struct AnnotationCanvas: View {
     // MARK: - Gesture handling
 
     private func handleChanged(_ value: DragGesture.Value, fitted: CGRect) {
+        // Drag begin: hit-test existing text labels when the Text tool is
+        // active, to distinguish move/edit from add. Rects are view-space.
+        if dragStartLocation == nil {
+            dragStartLocation = value.location
+            if tool == .text {
+                let rects = annotations.map { a -> CGRect in
+                    a.tool == .text
+                        ? TextAnnotationHitTest.bounds(text: a.text,
+                                                       origin: toViewSpace(a.points.first ?? .zero, fitted: fitted),
+                                                       fontSize: max(a.lineWidth * 4, 8))
+                        : .null
+                }
+                movingTextIndex = TextAnnotationHitTest.topmostIndex(rects: rects, containing: value.location)
+            }
+        }
+
+        // Moving (or potentially tapping) an existing text label.
+        if let i = movingTextIndex {
+            let start = dragStartLocation ?? value.location
+            if hypot(value.location.x - start.x, value.location.y - start.y) > 4 { didMoveText = true }
+            if didMoveText, i < annotations.count {
+                annotations[i].points = [toBaseSpace(value.location, fitted: fitted)]
+            }
+            return
+        }
+
+        // Otherwise: pen/arrow/rectangle draw (text adds nothing here).
         guard tool != .text else { return }
         let p = toBaseSpace(value.location, fitted: fitted)
         switch tool {
@@ -70,9 +103,16 @@ struct AnnotationCanvas: View {
     }
 
     private func handleEnded(_ value: DragGesture.Value, fitted: CGRect) {
-        let p = toBaseSpace(value.location, fitted: fitted)
+        defer { movingTextIndex = nil; dragStartLocation = nil; didMoveText = false }
+
+        if let i = movingTextIndex {
+            // Moved: commit happened during onChanged. Tapped: re-edit.
+            if !didMoveText, i < annotations.count { onEditText(i) }
+            return
+        }
+
         if tool == .text {
-            onTextTap(p)
+            onTextTap(toBaseSpace(value.location, fitted: fitted))
             return
         }
         if let draft {
@@ -180,6 +220,7 @@ struct ImageAnnotationView: View {
     @State private var pendingTextPoint: CGPoint?
     @State private var pendingText: String = ""
     @State private var showingTextEntry = false
+    @State private var editingTextIndex: Int?
     @State private var keyMonitor: Any?
 
     private var colorHex: String { color.toHex() ?? "#FF3B30" }
@@ -197,7 +238,14 @@ struct ImageAnnotationView: View {
                 lineWidth: lineWidth,
                 onTextTap: { point in
                     pendingTextPoint = point
+                    editingTextIndex = nil
                     pendingText = ""
+                    showingTextEntry = true
+                },
+                onEditText: { i in
+                    editingTextIndex = i
+                    pendingText = annotations[i].text
+                    pendingTextPoint = nil
                     showingTextEntry = true
                 }
             )
@@ -211,7 +259,7 @@ struct ImageAnnotationView: View {
         .onDisappear { removeKeyMonitor() }
         .alert("Add Text", isPresented: $showingTextEntry) {
             TextField("Text", text: $pendingText)
-            Button("Cancel", role: .cancel) { pendingTextPoint = nil }
+            Button("Cancel", role: .cancel) { pendingTextPoint = nil; editingTextIndex = nil; pendingText = "" }
             Button("Add") { commitText() }
         }
     }
@@ -274,8 +322,19 @@ struct ImageAnnotationView: View {
     }
 
     private func commitText() {
+        if let i = editingTextIndex {
+            if i < annotations.count {
+                if pendingText.isEmpty { annotations.remove(at: i) }
+                else { annotations[i].text = pendingText }
+            }
+            editingTextIndex = nil
+            pendingText = ""
+            pendingTextPoint = nil
+            return
+        }
         guard let point = pendingTextPoint, !pendingText.isEmpty else {
             pendingTextPoint = nil
+            pendingText = ""
             return
         }
         annotations.append(Annotation(id: UUID(), tool: .text, points: [point],

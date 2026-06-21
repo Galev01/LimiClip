@@ -25,7 +25,7 @@ LimiClip sits in your menu bar and captures every text snippet, image, and file 
 
 **Images and files, not just text**&nbsp;&nbsp;&nbsp;&nbsp;Captures images copied from any app and records file paths for dragged files — all browsable and re-pastable from the drawer.
 
-**Capture & annotate**&nbsp;&nbsp;&nbsp;&nbsp;⌘⇧A dims the live screen for a crosshair region select, freezes it, and docks a markup drawer right to your selection: **pen, arrow, rectangle, text**, with color and thickness. Finish with ⌘C (copy), ⌘S (save to a folder), or ⌘⇧S (save to history). Annotate any image already in the drawer via right-click → Annotate.
+**Capture & annotate**&nbsp;&nbsp;&nbsp;&nbsp;⌘⇧A dims the live screen for a crosshair region select, freezes it, and docks a markup drawer right to your selection: **pen, arrow, rectangle, text**, with color and thickness. Text labels can be **dragged to reposition** or **tapped to re-edit** (clear to delete). Finish with ⌘C (copy), ⌘S (save to a folder), or ⌘⇧S (save to history). Annotate any image already in the drawer via right-click → Annotate.
 
 **Screen recording**&nbsp;&nbsp;&nbsp;&nbsp;Record a region or the full screen with a 3-2-1 countdown and a menu-bar Stop control. Clips save to `~/Movies/LimiClip_Recordings` (or any folder you choose) and appear in the **Videos** tab with a thumbnail, play badge, and duration — Play, Reveal in Finder, or Copy. Optional microphone audio.
 

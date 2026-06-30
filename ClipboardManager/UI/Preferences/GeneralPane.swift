@@ -13,6 +13,7 @@ struct GeneralPane: View {
     @AppStorage(Settings.Key.recordAudio) private var recordAudio: Bool = false
 
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
+    @State private var loginNeedsApproval: Bool = LaunchAtLogin.status == .requiresApproval
 
     var body: some View {
         Form {
@@ -22,10 +23,30 @@ struct GeneralPane: View {
                 }
                 .onChange(of: launchAtLogin) { _, newValue in
                     do {
-                        try LaunchAtLogin.setEnabled(newValue)
+                        switch try LaunchAtLogin.setEnabled(newValue) {
+                        case .enabled, .disabled:
+                            loginNeedsApproval = false
+                        case .requiresApproval:
+                            // Registration succeeded but macOS needs the user to
+                            // approve it. Keep the toggle on (that's the intent)
+                            // and point them at System Settings — don't silently
+                            // flip it back off.
+                            loginNeedsApproval = true
+                            LaunchAtLogin.openSystemSettingsLoginItems()
+                        }
                     } catch {
                         Log.app.error("launch at login toggle failed: \(error.localizedDescription, privacy: .public)")
                         launchAtLogin = LaunchAtLogin.isEnabled
+                        loginNeedsApproval = LaunchAtLogin.status == .requiresApproval
+                    }
+                }
+                if loginNeedsApproval {
+                    HStack(spacing: 6) {
+                        Text("Approve LimiClip in System Settings → Login Items to finish enabling this.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        Button("Open") { LaunchAtLogin.openSystemSettingsLoginItems() }
+                            .font(.system(size: 11))
                     }
                 }
             }

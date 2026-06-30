@@ -153,15 +153,48 @@ progress UI come for free and work for accessory/agent apps.
 The feed URL uses the `releases/latest/download/<asset>` redirect so it always
 resolves to the newest release's `appcast.xml`.
 
-### Security model
+### Security model (corrected per adversarial validation)
 
-Sparkle verifies, before installing, **both**:
+Sparkle's actual trust root is the **EdDSA signature** on the downloaded DMG
+(verified against `SUPublicEDKey`, produced by `sign_update`). Sparkle
+additionally enforces **code-signing identity continuity** (the new build's
+Developer ID must match the running app). **Notarization is *not* a Sparkle
+install gate** — it is what lets macOS Gatekeeper admit the build at launch,
+out-of-band from Sparkle. So:
 
-1. the **EdDSA signature** on the downloaded DMG (from `SUPublicEDKey`), and
-2. Apple **code-signing + notarization** of the contained app.
+- The EdDSA signature is mandatory and load-bearing.
+- Set `SUVerifyUpdateBeforeExtraction = YES` and ship the update as a
+  Developer-ID-signed **and** notarized `.dmg` so the code-signing check is
+  meaningful.
+- `SUEnableAutomaticChecks` is an optional UX setting, not part of the security
+  model.
 
 The EdDSA private key never enters the repo (stored in macOS Keychain on the
 release machine); only the public key ships in Info.plist.
+
+### Accessory-app update UI (per adversarial validation)
+
+This app runs `NSApp.setActivationPolicy(.accessory)` (no Dock icon). Sparkle
+2.2+ intentionally does **not** let a *scheduled* update alert steal focus on a
+dockless app, so automatic-check prompts can appear behind other windows and be
+missed. Manual "Check for Updates…" (user-initiated, foreground) is unaffected.
+
+`UpdaterController` therefore sets a `SPUStandardUserDriverDelegate` that:
+
+- returns `supportsGentleScheduledUpdateReminders = true`, and
+- in `standardUserDriverWillHandleShowingUpdate(_:forUpdate:state:)` calls
+  `NSApp.setActivationPolicy(.regular)` + `NSApp.activate(ignoringOtherApps:)`
+  so the update window comes forward (optionally restoring `.accessory`
+  afterward).
+
+### Info.plist keys (updated)
+
+| Key | Value |
+|-----|-------|
+| `SUFeedURL` | `https://github.com/Galev01/LimiClip/releases/latest/download/appcast.xml` |
+| `SUPublicEDKey` | `<EdDSA public key>` |
+| `SUEnableAutomaticChecks` | `YES` (optional UX) |
+| `SUVerifyUpdateBeforeExtraction` | `YES` |
 
 ### Data flow
 
@@ -184,7 +217,11 @@ stapled), add:
    → emits the `sparkle:edSignature` and `length`.
 9. **Generate/append `appcast.xml`:** run Sparkle's `generate_appcast` against the
    folder of released DMGs (it reads the signed DMG, version, min-macOS, and
-   embedded release notes) to (re)produce `build/appcast.xml`.
+   embedded release notes) to (re)produce `build/appcast.xml`. The enclosure
+   `url` for each entry MUST be the **versioned** asset URL
+   (`releases/download/vX.Y.Z/LimiClip-X.Y.Z.dmg`), never `/latest/`, so the
+   downloaded binary always matches its appcast entry. (GitHub's `latest`
+   ordering is by commit date; only the *feed* URL uses `/latest/`.)
 10. **Publish:** `gh release create v<VERSION> build/LimiClip-<VERSION>.dmg
     build/appcast.xml ...` so `releases/latest/download/appcast.xml` resolves to
     the newest feed.

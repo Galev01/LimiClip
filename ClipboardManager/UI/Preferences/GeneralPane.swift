@@ -14,6 +14,13 @@ struct GeneralPane: View {
 
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
     @State private var loginNeedsApproval: Bool = LaunchAtLogin.status == .requiresApproval
+    @AppStorage("SUEnableAutomaticChecks") private var autoCheckUpdates: Bool = true
+
+    private var appVersionString: String {
+        let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let b = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        return "\(v) (\(b))"
+    }
 
     var body: some View {
         Form {
@@ -80,6 +87,20 @@ struct GeneralPane: View {
                 }
                 Toggle(isOn: $compactMode) {
                     Text("Compact Mode")
+                }
+            }
+
+            Section("Updates") {
+                // Bound to Sparkle's own default key (SPUUpdaterSettings reads
+                // `SUEnableAutomaticChecks` from the host's user defaults), so
+                // this stays in sync with the updater without extra plumbing.
+                Toggle(isOn: $autoCheckUpdates) {
+                    Text("Automatically check for updates")
+                }
+                HStack {
+                    Text("Version")
+                    Spacer()
+                    Text(appVersionString).foregroundStyle(.secondary)
                 }
             }
 

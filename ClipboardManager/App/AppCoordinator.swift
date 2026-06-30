@@ -28,6 +28,7 @@ final class AppCoordinator {
     private let exclusionsVM: ExclusionsViewModel
     private let preferencesWindow: PreferencesWindowController
     private let screenshotImporter: ScreenshotImporter
+    private let updater = UpdaterController()
 
     nonisolated(unsafe) private var appearanceObserver: NSObjectProtocol?
     private var lastAppearance: AppAppearance?
@@ -79,6 +80,7 @@ final class AppCoordinator {
         hotkey.onStartRecording = { [weak self] in self?.toggleRecording() }
         menuBar.onToggleRecording = { [weak self] in self?.toggleRecording() }
         menuBar.isRecording = { [weak self] in self?.isRecording ?? false }
+        menuBar.onCheckForUpdates = { [weak self] in self?.updater.checkForUpdates() }
     }
 
     private let chainCopy = ChainCopyService()
@@ -470,6 +472,8 @@ final class AppCoordinator {
         monitor.start()
         screenshotImporter.start()
         retention.start()
+        reconcileLaunchAtLogin()
+        updater.start()
 
         // Re-apply appearance if the user changes it in Preferences.
         appearanceObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
@@ -484,6 +488,27 @@ final class AppCoordinator {
     deinit {
         if let token = appearanceObserver {
             NotificationCenter.default.removeObserver(token)
+        }
+    }
+
+    /// Re-asserts the login-item registration at launch if the user previously
+    /// enabled it but the service dropped it (e.g. after an app update replaced
+    /// the bundle, or the stale-binary trap). This is what keeps "Launch at
+    /// Login" sticky across the bundle swaps the auto-updater performs.
+    private func reconcileLaunchAtLogin() {
+        let intent = settings.defaults.bool(forKey: Settings.Key.launchAtLogin)
+        switch LaunchAtLoginReconciler.action(intent: intent, status: LaunchAtLogin.status) {
+        case .none:
+            break
+        case .register:
+            do {
+                try LaunchAtLogin.setEnabled(true)
+                Log.coordinator.info("re-registered launch-at-login on startup")
+            } catch {
+                Log.coordinator.error("launch-at-login re-register failed: \(error.localizedDescription, privacy: .public)")
+            }
+        case .needsApproval:
+            Log.coordinator.notice("launch-at-login awaiting user approval in System Settings")
         }
     }
 

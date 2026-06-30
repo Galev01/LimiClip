@@ -40,7 +40,7 @@ struct Settings: @unchecked Sendable {
         static let historyLimit = "historyLimit"
         static let retentionDays = "retentionDays"
         static let showHoverPreview = "showHoverPreview"
-        static let launchAtLogin = "launchAtLogin"   // tracked-only; service mgmt is source of truth
+        static let launchAtLogin = "launchAtLogin"   // persisted user intent; reconciled against SMAppService at launch
         static let compactMode = "compactMode"
         static let strictCaptureMode = "strictCaptureMode"
         static let saveScreenshots = "saveScreenshots"
@@ -158,19 +158,71 @@ struct Settings: @unchecked Sendable {
 
 enum LaunchAtLogin {
 
-    static var isEnabled: Bool {
-        SMAppService.mainApp.status == .enabled
+    /// User-visible result of a toggle, so callers can react to the macOS case
+    /// where registration succeeds but the login item still needs the user to
+    /// approve it in System Settings → General → Login Items.
+    enum Outcome: Equatable { case enabled, requiresApproval, disabled }
+
+    /// The real service status. `register()` can succeed yet leave the status
+    /// at `.requiresApproval`, so callers must inspect this rather than assume
+    /// "no throw" means "enabled".
+    static var status: SMAppService.Status { SMAppService.mainApp.status }
+
+    static var isEnabled: Bool { status == .enabled }
+
+    /// Maps a raw service status to the user-facing outcome.
+    static func outcome(for status: SMAppService.Status) -> Outcome {
+        switch status {
+        case .enabled:         return .enabled
+        case .requiresApproval: return .requiresApproval
+        default:               return .disabled   // .notRegistered, .notFound
+        }
     }
 
-    /// Toggles. Returns the new state. Throws if SMAppService rejects the
-    /// change (rare in practice).
+    /// Toggles the login item and persists the user's *intent* to
+    /// `Settings.Key.launchAtLogin` so startup reconciliation can re-assert it
+    /// after the service drops the registration (app update / move). Returns the
+    /// resulting outcome; on `.requiresApproval` the caller should keep the
+    /// toggle on and prompt the user to approve. Throws if SMAppService rejects
+    /// the change (rare in practice).
     @discardableResult
-    static func setEnabled(_ enabled: Bool) throws -> Bool {
+    static func setEnabled(_ enabled: Bool, defaults: UserDefaults = .standard) throws -> Outcome {
         if enabled {
             try SMAppService.mainApp.register()
         } else {
             try SMAppService.mainApp.unregister()
         }
-        return isEnabled
+        defaults.set(enabled, forKey: Settings.Key.launchAtLogin)
+        return outcome(for: status)
+    }
+
+    /// Opens System Settings to the Login Items pane so the user can approve a
+    /// `.requiresApproval` registration.
+    static func openSystemSettingsLoginItems() {
+        SMAppService.openSystemSettingsLoginItems()
+    }
+}
+
+// MARK: - Launch-at-login startup reconciliation
+
+/// Pure decision logic for reconciling the persisted user intent with the
+/// current service status at app launch. Extracted as a free function so it can
+/// be unit-tested without touching the real `SMAppService`.
+enum LaunchAtLoginReconciler {
+
+    enum Action: Equatable {
+        case none           // intent satisfied (or user doesn't want it)
+        case register       // intent on but service forgot — re-register
+        case needsApproval  // intent on but macOS is waiting on the user
+    }
+
+    static func action(intent: Bool, status: SMAppService.Status) -> Action {
+        guard intent else { return .none }
+        switch status {
+        case .enabled:                   return .none
+        case .notRegistered, .notFound:  return .register
+        case .requiresApproval:          return .needsApproval
+        @unknown default:                return .none
+        }
     }
 }

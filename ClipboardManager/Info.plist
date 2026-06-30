@@ -28,5 +28,17 @@
 	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<!-- Sparkle auto-updater. SUPublicEDKey is filled during the one-time
+	     bootstrap (run `generate_keys`); until then the updater stays inert
+	     (UpdaterController gates on the placeholder). The feed URL uses the
+	     /releases/latest/ redirect; appcast enclosure URLs are versioned. -->
+	<key>SUFeedURL</key>
+	<string>https://github.com/Galev01/LimiClip/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>REPLACE_WITH_GENERATED_ED25519_PUBLIC_KEY</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 </dict>
 </plist>

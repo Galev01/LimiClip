@@ -28,6 +28,7 @@ final class AppCoordinator {
     private let exclusionsVM: ExclusionsViewModel
     private let preferencesWindow: PreferencesWindowController
     private let screenshotImporter: ScreenshotImporter
+    private let updater = UpdaterController()
 
     nonisolated(unsafe) private var appearanceObserver: NSObjectProtocol?
     private var lastAppearance: AppAppearance?
@@ -79,6 +80,7 @@ final class AppCoordinator {
         hotkey.onStartRecording = { [weak self] in self?.toggleRecording() }
         menuBar.onToggleRecording = { [weak self] in self?.toggleRecording() }
         menuBar.isRecording = { [weak self] in self?.isRecording ?? false }
+        menuBar.onCheckForUpdates = { [weak self] in self?.updater.checkForUpdates() }
     }
 
     private let chainCopy = ChainCopyService()
@@ -471,6 +473,7 @@ final class AppCoordinator {
         screenshotImporter.start()
         retention.start()
         reconcileLaunchAtLogin()
+        updater.start()
 
         // Re-apply appearance if the user changes it in Preferences.
         appearanceObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,

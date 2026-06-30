@@ -17,6 +17,8 @@ final class MenuBarController: NSObject {
     /// Assignable after construction (see `onToggleRecording`). Reports whether
     /// a recording is currently in progress, for the menu-item title.
     var isRecording: @MainActor () -> Bool
+    /// Assignable after construction. Triggers a Sparkle "Check for Updates…".
+    var onCheckForUpdates: @MainActor () -> Void = {}
 
     private var pauseItems: [NSMenuItem] = []
     private var resumeItem: NSMenuItem?
@@ -71,6 +73,10 @@ final class MenuBarController: NSObject {
         prefsItem.target = self
         menu.addItem(prefsItem)
 
+        let updateItem = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdatesClicked), keyEquivalent: "")
+        updateItem.target = self
+        menu.addItem(updateItem)
+
         menu.addItem(.separator())
 
         // Pause / Resume.
@@ -122,6 +128,11 @@ final class MenuBarController: NSObject {
     @objc private func openPreferencesClicked() {
         Log.menuBar.info("menu: preferences")
         onOpenPreferences()
+    }
+
+    @objc private func checkForUpdatesClicked() {
+        Log.menuBar.info("menu: check for updates")
+        onCheckForUpdates()
     }
 
     @objc private func pause15Clicked() { onPause(.fifteenMinutes); refreshStatus() }

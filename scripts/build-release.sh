@@ -162,6 +162,38 @@ echo "📎  Stapling the DMG…"
 xcrun stapler staple "$DMG_PATH"
 echo "✓  DMG signed, notarized, stapled."
 
+# ── 8. Sparkle: sign the update + (re)generate the appcast ────────────────────
+# Produces build/appcast.xml with an EdDSA signature over the DMG. Sparkle
+# verifies that signature (SUPublicEDKey) before installing. Requires the
+# one-time bootstrap (run `generate_keys` once; the private key lives in the
+# login Keychain). Skipped automatically until that bootstrap is done.
+PUBKEY=$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "$APP_PATH/Contents/Info.plist" 2>/dev/null || echo "")
+if [[ -z "$PUBKEY" || "$PUBKEY" == "REPLACE_WITH_GENERATED_ED25519_PUBLIC_KEY" ]]; then
+    echo "⚠️  Skipping Sparkle appcast — SUPublicEDKey not configured yet."
+    echo "    One-time bootstrap: run Sparkle's generate_keys, paste the public"
+    echo "    key into ClipboardManager/Info.plist (SUPublicEDKey), then re-release."
+else
+    # Locate Sparkle's CLI tools from the resolved SPM artifacts.
+    DD=$(xcodebuild -project "$REPO_ROOT/ClipboardManager.xcodeproj" -scheme "$SCHEME" -showBuildSettings 2>/dev/null | awk '/ BUILD_DIR =/ { print $3; exit }')
+    SPARKLE_BIN=$(find "${DD%/Build/*}" "$HOME/Library/Developer/Xcode/DerivedData" -path "*artifacts/sparkle/Sparkle/bin" -type d 2>/dev/null | head -1)
+    if [[ -z "$SPARKLE_BIN" || ! -x "$SPARKLE_BIN/generate_appcast" ]]; then
+        echo "❌  Sparkle tools (generate_appcast) not found. Resolve packages first:"
+        echo "    xcodebuild -resolvePackageDependencies -scheme $SCHEME"
+        exit 1
+    fi
+    echo "🔏  Generating appcast (Sparkle tools: $SPARKLE_BIN)…"
+    # Enclosure URLs MUST be versioned (not /latest/) so the download always
+    # matches its appcast entry; only the SUFeedURL uses /latest/.
+    "$SPARKLE_BIN/generate_appcast" \
+        --download-url-prefix "https://github.com/Galev01/LimiClip/releases/download/v${VERSION}/" \
+        -o "$REPO_ROOT/build/appcast.xml" \
+        "$REPO_ROOT/build"
+    echo "✓  Appcast: $REPO_ROOT/build/appcast.xml"
+    echo ""
+    echo "    Publish BOTH the DMG and the appcast on the release, e.g.:"
+    echo "    gh release create v${VERSION} \"$DMG_PATH\" \"$REPO_ROOT/build/appcast.xml\" --title \"LimiClip ${VERSION}\""
+fi
+
 echo ""
 echo "✅  Done: $DMG_PATH"
 echo "    Distribute this file to other Macs."
